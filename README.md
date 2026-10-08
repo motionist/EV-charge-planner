@@ -43,7 +43,9 @@ Selected in the config flow:
   **Nord Pool** (custom integration) or a generic list attribute.
 * Optional price forecast sensor (**Open Spot Forecast**).
 * Optional efficiency sensor (kWh/km), otherwise a fixed value.
-* Trips via text helpers (calendar adapter planned for v0.2):
+* Trips via text helpers (calendar adapter planned for v0.2). How the km per
+  day can be calculated from Google Calendar with HERE routing is described in
+  [docs/here-routing.md](docs/here-routing.md):
   * km per day: `2026-10-08=49.6;2026-10-12=49.6;`
   * away hours: `2026-10-08=8-17;2026-10-15=8-23`
   * away nights: `2026-10-10,2026-10-11` (car away the night after these dates)

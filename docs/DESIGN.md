@@ -49,7 +49,7 @@ Non-goals:
 | Current SoC | sensor entity | % |
 | Car at home / plugged in | binary_sensor (optional) | planner still produces a plan when unplugged |
 | Hourly prices | price adapter | layered: **known prices** (today/tomorrow) override **forecast** (e.g. Open Spot Forecast, next ~4 days) which override a **fallback forecast** (e.g. Energi Data Service forecast). Missing hours ⇒ opportunity has no price and is never treated as "cheaper". |
-| km per day | trip adapter | v0.1: legacy text format `YYYY-MM-DD=km;…`. Later: calendar + routing provider. |
+| km per day | trip adapter | v0.1: legacy text format `YYYY-MM-DD=km;…`, e.g. produced from Google Calendar with HERE routing – see [here-routing.md](here-routing.md). v0.2: calendar + routing built in. |
 | Away hours | trip adapter | v0.1: legacy text `YYYY-MM-DD=8-17;…`. Later: calendar events with location + travel time. |
 | Away overnight | trip adapter | v0.1: legacy text `YYYY-MM-DD,YYYY-MM-DD`. |
 | Public holidays | `workday` binary sensor or holiday calendar | optional |
