@@ -41,6 +41,8 @@ Non-goals:
 | **Buffer** | Range that must remain *after* the planned trips: `buffer_km` (default 100 km) converted to %. |
 | **Max level** | Upper cap for normal charging (default 90 %). Long trips may therefore not be able to keep the full buffer – this is accepted. |
 | **Consumption** | `km × efficiency_kwh_per_km ÷ battery_kwh × 100` (% of battery). |
+| **Forecast accuracy** | Per date that only has forecast prices: `1 − MAE ÷ mean known price`, where MAE is the forecast's mean absolute error for that lead day (see §5.0). Known prices have accuracy 1. |
+| **Adjusted price** | The price the planner compares opportunities by: the known price, or a forecast price divided by its accuracy when the accuracy is below `forecast_min_accuracy`. A known price therefore weighs more than a forecast of the same size. |
 
 ## 3. Inputs
 
@@ -49,6 +51,7 @@ Non-goals:
 | Current SoC | sensor entity | % |
 | Car at home / plugged in | binary_sensor (optional) | planner still produces a plan when unplugged |
 | Hourly prices | price adapter | layered: **known prices** (today/tomorrow) override **forecast** (e.g. Open Spot Forecast, next ~4 days) which override a **fallback forecast** (e.g. Energi Data Service forecast). Missing hours ⇒ opportunity has no price and is never treated as "cheaper". |
+| Forecast error per lead day | sensor(s), optional | MAE in currency/kWh for lead day 1–4, e.g. Open Spot Forecast's `forecast_mae_day_1…4` sensors. Lead days beyond the last sensor use the last value × `forecast_far_factor`. Missing ⇒ forecasts are trusted (no adjustment). |
 | km per day | trip adapter | v0.1: legacy text format `YYYY-MM-DD=km;…`, e.g. produced from Google Calendar with HERE routing – see [here-routing.md](here-routing.md). v0.2: calendar + routing built in. |
 | Away hours | trip adapter | v0.1: legacy text `YYYY-MM-DD=8-17;…`. Later: calendar events with location + travel time. |
 | Away overnight | trip adapter | v0.1: legacy text `YYYY-MM-DD,YYYY-MM-DD`. |
@@ -79,9 +82,39 @@ night(d1) depart(d1) ...                                   ... up to 7 dates
 
 ## 5. Algorithm
 
+### 5.0 Forecast price adjustment
+
+A known (day-ahead) price is certain; a forecast is not. Comparing them
+at face value makes the planner wait for a forecast night that is only
+slightly cheaper and often turns out more expensive. Therefore every
+forecast price is made "worse" in proportion to how unreliable the
+forecast is before any comparison:
+
+1. `last_known` = the last date covered by known prices.
+2. For each date *d* after `last_known`: `lead = d − last_known` (days),
+   `mae = mae_day[min(lead, 4)]` (× `forecast_far_factor` when lead > 4),
+   `accuracy = 1 − mae ÷ mean(known prices)`.
+3. `factor = 1` if `accuracy ≥ forecast_min_accuracy`, else
+   `max(accuracy, 0.3)` (the floor prevents absurd prices when the
+   forecast is very poor).
+4. Every hourly price of *d* (night and day window alike):
+   `adjusted = price ÷ factor` if `price > 0`, else `price × factor` (so an
+   uncertain negative price is not made *more* attractive).
+5. Known prices are never adjusted.
+
+All comparisons in §5.1–5.3 (which opportunity is cheaper, calibration
+price thresholds) use the adjusted price; displays and the plan rows
+show both the raw and the adjusted price.
+
+Example: tonight's known price is 0.74, tomorrow night's forecast is 0.65
+with day-1 accuracy 84 % ⇒ adjusted 0.65 ÷ 0.84 = 0.77 > 0.74, so tonight
+is the cheaper opportunity and charges for tomorrow as well. The same
+applies to today's day window: a known 0.74 at noon beats a forecast 0.66
+tonight when that forecast is only 84 % accurate (adjusted 0.79).
+
 ### 5.1 Target for one opportunity
 
-For opportunity *k* with price `p_k`:
+For opportunity *k* with (adjusted, §5.0) price `p_k`:
 
 1. Walk forward through the timeline from *k*.
 2. Stop at the first later **available** opportunity *j* with `p_j < p_k`
@@ -130,7 +163,8 @@ opportunity – the planner never assumes coverage it cannot deliver.
 * **Plan** = one row per date with: date, type (weekday/weekend/holiday),
   km, night price + cheapest hour, night target, day price + hour, day
   target, expected SoC at departure, calibration flag, away flags, status
-  (`charge`, `covered`, `not_needed`).
+  (`charge`, `covered`, `not_needed`), and the forecast factor plus
+  adjusted night/day prices when the date only has forecast prices.
 
 ## 6. Parameters (number entities)
 
@@ -146,6 +180,8 @@ opportunity – the planner never assumes coverage it cannot deliver.
 | Calibration early grab | 0 | days |
 | Calibration price threshold | 0 | currency/kWh |
 | Calibration escalation | 10 | %/week |
+| Forecast min. accuracy (`forecast_min_accuracy`) | 90 | % |
+| Forecast far factor (`forecast_far_factor`, lead > 4 days) | 1.25 | × |
 
 Night end, day start/end and horizon are options (config flow) rather than
 entities.
@@ -174,6 +210,10 @@ parameter change.
 1. **v0.1** – this skeleton: planner core with tests reproducing the
    private installation, legacy text adapters, EDS/OSF price adapter,
    sensors + numbers. Side-by-side run against the private installation.
+   Next step within v0.1: forecast price adjustment (§5.0) in the planner
+   core – source tag per price layer (`known`/`forecast`/`fallback`), MAE
+   sensors in the config flow, the two parameters as number entities and
+   tests for the 0.74 known vs 0.65 forecast case.
 2. **v0.2** – calendar trip adapter (events with location → km via a
    routing provider; travel time → away hours; multi-day events → away
    overnight), Nordpool/Tibber adapters, workday holidays.
@@ -182,6 +222,12 @@ parameter change.
    listing (brands, docs, translations).
 
 ## 9. Open questions
+
+* Forecast accuracy: the reference is the mean of the currently known
+  prices (today/tomorrow). A longer reference (e.g. 30-day mean price)
+  would make the factor steadier across cheap and expensive days. The
+  MAE could also come from the planner's own log of forecast vs actual
+  (as the private installation does) instead of the forecast provider.
 
 * Should the night window extend before midnight (e.g. 22:00–08:00)? The
   original used 00–08 because tariffs are lowest then.

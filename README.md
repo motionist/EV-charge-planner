@@ -24,6 +24,11 @@ enough for the trips plus a safety buffer, bought at the cheapest hours.
 * Optional periodic **battery calibration** charge on a cheap night.
 * Uses known prices first, then a price forecast (e.g. Open Spot Forecast),
   then a fallback forecast (e.g. Energi Data Service).
+* Weighs a **known price higher than a forecast** (design, not yet in the
+  code): when a forecast day's accuracy (from the forecast's own error
+  statistics) is below 90 %, its prices are divided by the accuracy before
+  they are compared – so a known 0.74 today beats a 0.65 forecast for
+  tomorrow at 84 % accuracy (0.77). See [DESIGN.md §5.0](docs/DESIGN.md).
 
 ## Entities
 
