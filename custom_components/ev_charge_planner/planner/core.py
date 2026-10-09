@@ -28,6 +28,42 @@ def merge_prices(*layers: Iterable[HourPrice], tz=None) -> HourMap:
     return out
 
 
+MIN_FORECAST_FACTOR = 0.3
+
+
+def forecast_factors(prices: HourMap, known_until: date | None, s: Settings) -> dict[date, float]:
+    """Accuracy factor per forecast date whose accuracy is too low (DESIGN §5.0).
+
+    Dates up to ``known_until`` have known prices and are never adjusted.
+    accuracy = 1 − MAE(lead day) ÷ mean known price; dates with accuracy below
+    ``forecast_min_accuracy`` get factor max(accuracy, MIN_FORECAST_FACTOR).
+    """
+    if known_until is None or not s.forecast_mae:
+        return {}
+    known = [p for (d, _h), p in prices.items() if d <= known_until]
+    mean = sum(known) / len(known) if known else 0.0
+    if mean <= 0:
+        return {}
+    n = len(s.forecast_mae)
+    out: dict[date, float] = {}
+    for d in sorted({d for (d, _h) in prices if d > known_until}):
+        lead = (d - known_until).days
+        mae = s.forecast_mae[min(lead, n) - 1] * (s.forecast_far_factor if lead > n else 1.0)
+        accuracy = 1 - mae / mean
+        if accuracy < s.forecast_min_accuracy / 100:
+            out[d] = max(accuracy, MIN_FORECAST_FACTOR)
+    return out
+
+
+def adjust_prices(prices: HourMap, factors: Mapping[date, float]) -> HourMap:
+    """Divide forecast prices by their date's factor (negative prices are multiplied)."""
+    out: HourMap = {}
+    for (d, h), p in prices.items():
+        f = factors.get(d)
+        out[(d, h)] = p if f is None else (p / f if p > 0 else p * f)
+    return out
+
+
 def day_type(day: date, info: DayInfo | None) -> str:
     """weekday | weekend | holiday."""
     if info is not None and info.holiday:
@@ -219,9 +255,26 @@ def calibration_due(events: list[_Event], idx: int, s: Settings, last_cal: datet
 # --------------------------------------------------------------------------- #
 
 
-def plan(now: datetime, soc: float, days: Mapping[date, DayInfo], prices: HourMap, s: Settings) -> Plan:
-    """Simulate the coming days and return the plan (DESIGN §5.3–5.4)."""
-    events, first, night_mode = build_timeline(now, days, prices, s)
+def plan(
+    now: datetime,
+    soc: float,
+    days: Mapping[date, DayInfo],
+    prices: HourMap,
+    s: Settings,
+    known_until: date | None = None,
+) -> Plan:
+    """Simulate the coming days and return the plan (DESIGN §5.0, §5.3–5.4).
+
+    ``known_until`` is the last date with known prices; later dates are
+    forecasts and are adjusted for their accuracy before any comparison.
+    """
+    factors = forecast_factors(prices, known_until, s)
+    events, first, night_mode = build_timeline(now, days, adjust_prices(prices, factors), s)
+    for ev in events:
+        if ev.opp is not None:
+            ev.opp.factor = factors.get(ev.opp.day, 1.0)
+            if ev.opp.best_hour is not None:
+                ev.opp.raw_price = prices.get((ev.opp.day, ev.opp.best_hour))
     tz = now.tzinfo
 
     rows: dict[date, PlanRow] = {}

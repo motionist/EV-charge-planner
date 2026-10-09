@@ -22,6 +22,7 @@ from .const import (
     CONF_EFFICIENCY_ENTITY,
     CONF_EFFICIENCY_FALLBACK,
     CONF_FORECAST_ENTITY,
+    CONF_FORECAST_MAE_ENTITIES,
     CONF_HOLIDAY_CALENDAR,
     CONF_HORIZON_DAYS,
     CONF_KM_ENTITY,
@@ -74,7 +75,7 @@ class PlannerCoordinator(DataUpdateCoordinator[Plan]):
             CONF_AWAY_NIGHTS_ENTITY,
             CONF_LAST_CALIBRATION_ENTITY,
         )
-        return [e for k in keys if (e := self._conf.get(k))]
+        return [e for k in keys if (e := self._conf.get(k))] + list(self._conf.get(CONF_FORECAST_MAE_ENTITIES) or [])
 
     @callback
     def async_start_listeners(self) -> CALLBACK_TYPE:
@@ -124,7 +125,19 @@ class PlannerCoordinator(DataUpdateCoordinator[Plan]):
                 out.add(d)
         return out
 
+    def _forecast_mae(self) -> tuple[float, ...]:
+        """MAE per lead day from the configured sensors, in order; stops at the first unavailable one."""
+        out: list[float] = []
+        for entity_id in self._conf.get(CONF_FORECAST_MAE_ENTITIES) or []:
+            st = self.hass.states.get(entity_id)
+            try:
+                out.append(float(st.state))
+            except (AttributeError, TypeError, ValueError):
+                break
+        return tuple(out)
+
     def _prices(self, tz):
+        """Merged hourly prices and the last date with known prices."""
         adapter = self._conf.get(CONF_PRICE_ADAPTER, price_adapters.ADAPTER_ENERGI_DATA_SERVICE)
         st = self._state(CONF_PRICE_ENTITY)
         attrs = dict(st.attributes) if st else {}
@@ -137,7 +150,8 @@ class PlannerCoordinator(DataUpdateCoordinator[Plan]):
             known = price_adapters.from_list(attrs.get("prices") or attrs.get("raw_today") or [], tz, "known")
         fst = self._state(CONF_FORECAST_ENTITY)
         forecast = price_adapters.open_spot_forecast(dict(fst.attributes), tz) if fst else []
-        return merge_prices(fallback, forecast, known, tz=tz)
+        known_until = max((hp.start.astimezone(tz).date() for hp in known), default=None)
+        return merge_prices(fallback, forecast, known, tz=tz), known_until
 
     # ------------------------------------------------------------------ update
 
@@ -164,6 +178,7 @@ class PlannerCoordinator(DataUpdateCoordinator[Plan]):
             day_end_hour=int(conf[CONF_DAY_END_HOUR]),
             horizon_days=int(conf[CONF_HORIZON_DAYS]),
             last_calibration=last_cal,
+            forecast_mae=self._forecast_mae(),
             **self.params,
         )
 
@@ -174,8 +189,8 @@ class PlannerCoordinator(DataUpdateCoordinator[Plan]):
             self._text_state(CONF_AWAY_NIGHTS_ENTITY),
             holidays,
         )
-        prices = self._prices(tz)
-        return plan(now, soc, days, prices, settings)
+        prices, known_until = self._prices(tz)
+        return plan(now, soc, days, prices, settings, known_until=known_until)
 
     @staticmethod
     def window_datetimes(opp, tz) -> tuple[datetime, datetime] | None:

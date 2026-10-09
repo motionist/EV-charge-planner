@@ -11,6 +11,7 @@
           "price_adapter": "Price source type",
           "price_entity": "Price sensor",
           "forecast_entity": "Price forecast sensor, e.g. Open Spot Forecast (optional)",
+          "forecast_mae_entities": "Forecast error (MAE) sensors for lead day 1, 2, 3, 4 – in that order, e.g. Open Spot Forecast's forecast_mae_day_1…4 (optional)",
           "efficiency_entity": "Efficiency sensor in kWh/km (optional)",
           "km_entity": "Km per day text helper (optional)",
           "away_hours_entity": "Away hours text helper (optional)",
@@ -89,6 +90,12 @@
       },
       "calibration_escalation_pct_per_week": {
         "name": "Calibration price escalation per week"
+      },
+      "forecast_min_accuracy": {
+        "name": "Forecast min. accuracy"
+      },
+      "forecast_far_factor": {
+        "name": "Forecast error factor beyond the last lead day"
       }
     }
   }

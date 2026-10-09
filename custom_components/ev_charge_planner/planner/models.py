@@ -51,6 +51,11 @@ class Settings:
     calibration_price_threshold: float = 0.0
     calibration_escalation_pct_per_week: float = 10.0
     last_calibration: datetime | None = None
+    # Forecast price adjustment (DESIGN §5.0). forecast_mae[i] is the
+    # forecast's mean absolute error for lead day i + 1; empty disables it.
+    forecast_mae: tuple[float, ...] = ()
+    forecast_min_accuracy: float = 90.0  # %
+    forecast_far_factor: float = 1.25  # MAE multiplier beyond the last lead day
 
     def pct_per_km(self) -> float:
         """Battery percentage used per km."""
@@ -74,6 +79,10 @@ class Opportunity:
     start_hour: int
     end_hour: int
     available: bool = True
+    # Unadjusted price of best_hour and the forecast factor it was divided by
+    # (1.0 for known prices). ``price`` is the adjusted price used for decisions.
+    raw_price: float | None = None
+    factor: float = 1.0
 
 
 @dataclass

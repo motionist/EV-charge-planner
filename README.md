@@ -24,10 +24,9 @@ enough for the trips plus a safety buffer, bought at the cheapest hours.
 * Optional periodic **battery calibration** charge on a cheap night.
 * Uses known prices first, then a price forecast (e.g. Open Spot Forecast),
   then a fallback forecast (e.g. Energi Data Service).
-* Weighs a **known price higher than a forecast** (design, not yet in the
-  code): when a forecast day's accuracy (from the forecast's own error
-  statistics) is below 90 %, its prices are divided by the accuracy before
-  they are compared – so a known 0.74 today beats a 0.65 forecast for
+* Weighs a **known price higher than a forecast**: when a forecast day's
+  accuracy (from the forecast's own error statistics) is below 90 %, its
+  prices are divided by the accuracy before they are compared – so a known 0.74 today beats a 0.65 forecast for
   tomorrow at 84 % accuracy (0.77). See [DESIGN.md §5.0](docs/DESIGN.md).
 
 ## Entities
@@ -37,7 +36,7 @@ enough for the trips plus a safety buffer, bought at the cheapest hours.
 | `sensor.<name>_target_soc` | Target SoC for the next charge – feed it to EV Smart Charging, your charger integration or an automation. |
 | `sensor.<name>_next_charge_start` / `_end` | The next charging window. |
 | `sensor.<name>_plan` | The full plan in the `rows` attribute (one row per date) for your own dashboard – see [docs/example-card.md](docs/example-card.md). |
-| `number.<name>_*` | Parameters: floors, max level, buffer (km), battery capacity, calibration settings. |
+| `number.<name>_*` | Parameters: floors, max level, buffer (km), battery capacity, calibration settings, forecast min. accuracy and far factor. |
 
 ## Inputs (v0.1)
 
@@ -46,7 +45,9 @@ Selected in the config flow:
 * Battery level (SoC) sensor, optional plugged-in/home binary sensor.
 * Price sensor: **Energi Data Service** (known prices + its forecast),
   **Nord Pool** (custom integration) or a generic list attribute.
-* Optional price forecast sensor (**Open Spot Forecast**).
+* Optional price forecast sensor (**Open Spot Forecast**) and its error
+  sensors (`forecast_mae_day_1…4`, in that order) for the forecast price
+  adjustment.
 * Optional efficiency sensor (kWh/km), otherwise a fixed value.
 * Trips via text helpers (calendar adapter planned for v0.2). How the km per
   day can be calculated from Google Calendar with HERE routing is described in

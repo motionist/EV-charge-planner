@@ -210,10 +210,10 @@ parameter change.
 1. **v0.1** – this skeleton: planner core with tests reproducing the
    private installation, legacy text adapters, EDS/OSF price adapter,
    sensors + numbers. Side-by-side run against the private installation.
-   Next step within v0.1: forecast price adjustment (§5.0) in the planner
-   core – source tag per price layer (`known`/`forecast`/`fallback`), MAE
-   sensors in the config flow, the two parameters as number entities and
-   tests for the 0.74 known vs 0.65 forecast case.
+   Includes the forecast price adjustment (§5.0): `known_until` from the
+   known price layer, MAE sensors in the config flow, the two parameters
+   as number entities, and tests for the 0.74 known vs 0.65 forecast and
+   the known day window vs forecast night cases.
 2. **v0.2** – calendar trip adapter (events with location → km via a
    routing provider; travel time → away hours; multi-day events → away
    overnight), Nordpool/Tibber adapters, workday holidays.

@@ -64,7 +64,8 @@ class TargetSocSensor(_Base):
             "next_charge_kind": nc.kind if nc else None,
             "next_charge_date": nc.day.isoformat() if nc else None,
             "next_charge_best_hour": nc.best_hour if nc else None,
-            "next_charge_price": nc.price if nc else None,
+            "next_charge_price": nc.raw_price if nc else None,
+            "next_charge_price_adjusted": nc.price if nc else None,
         }
 
 
@@ -112,13 +113,16 @@ class PlanSensor(_Base):
                     "type": r.day_type,
                     "km": round(r.km, 1),
                     "floor": r.floor,
-                    "night_price": r.night.price if r.night else None,
+                    "night_price": r.night.raw_price if r.night else None,
+                    "night_price_adjusted": r.night.price if r.night else None,
                     "night_hour": r.night.best_hour if r.night else None,
                     "night_available": r.night.available if r.night else None,
                     "night_target": r.night_target,
-                    "day_price": r.day_window.price if r.day_window else None,
+                    "day_price": r.day_window.raw_price if r.day_window else None,
+                    "day_price_adjusted": r.day_window.price if r.day_window else None,
                     "day_hour": r.day_window.best_hour if r.day_window else None,
                     "day_target": r.day_target,
+                    "forecast_factor": (r.night or r.day_window).factor if (r.night or r.day_window) else 1.0,
                     "soc_departure": r.soc_departure,
                     "calibration": r.calibration,
                     "away_overnight": r.away_overnight,

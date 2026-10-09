@@ -18,6 +18,7 @@ from .const import (
     CONF_EFFICIENCY_ENTITY,
     CONF_EFFICIENCY_FALLBACK,
     CONF_FORECAST_ENTITY,
+    CONF_FORECAST_MAE_ENTITIES,
     CONF_HOLIDAY_CALENDAR,
     CONF_HORIZON_DAYS,
     CONF_KM_ENTITY,
@@ -51,6 +52,9 @@ USER_SCHEMA = vol.Schema(
         ),
         vol.Required(CONF_PRICE_ENTITY): _entity("sensor"),
         vol.Optional(CONF_FORECAST_ENTITY): _entity("sensor"),
+        vol.Optional(CONF_FORECAST_MAE_ENTITIES): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="sensor", multiple=True)
+        ),
         vol.Optional(CONF_EFFICIENCY_ENTITY): _entity("sensor"),
         vol.Optional(CONF_KM_ENTITY): _entity(TEXT_DOMAINS),
         vol.Optional(CONF_AWAY_HOURS_ENTITY): _entity(TEXT_DOMAINS),

@@ -11,6 +11,7 @@
           "price_adapter": "Type af priskilde",
           "price_entity": "Prissensor",
           "forecast_entity": "Prisprognose-sensor, fx Open Spot Forecast (valgfri)",
+          "forecast_mae_entities": "Prognosefejl (MAE)-sensorer for dag 1, 2, 3, 4 – i den rækkefølge, fx Open Spot Forecasts forecast_mae_day_1…4 (valgfri)",
           "efficiency_entity": "Effektivitetssensor i kWh/km (valgfri)",
           "km_entity": "Tekst-hjælper med km pr. dag (valgfri)",
           "away_hours_entity": "Tekst-hjælper med ude-tider (valgfri)",
@@ -89,6 +90,12 @@
       },
       "calibration_escalation_pct_per_week": {
         "name": "Kalibrering pris-eskalering pr. uge"
+      },
+      "forecast_min_accuracy": {
+        "name": "Prognose min. nøjagtighed"
+      },
+      "forecast_far_factor": {
+        "name": "Prognosefejl-faktor efter sidste prognosedag"
       }
     }
   }

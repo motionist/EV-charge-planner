@@ -13,6 +13,7 @@ CONF_PLUGGED_ENTITY = "plugged_entity"
 CONF_PRICE_ADAPTER = "price_adapter"
 CONF_PRICE_ENTITY = "price_entity"
 CONF_FORECAST_ENTITY = "forecast_entity"
+CONF_FORECAST_MAE_ENTITIES = "forecast_mae_entities"
 CONF_EFFICIENCY_ENTITY = "efficiency_entity"
 CONF_KM_ENTITY = "km_entity"
 CONF_AWAY_HOURS_ENTITY = "away_hours_entity"
@@ -62,4 +63,6 @@ PARAMS: tuple[ParamSpec, ...] = (
     ParamSpec("calibration_early_days", 0, 0, 90, 1, "d", "mdi:calendar-arrow-left"),
     ParamSpec("calibration_price_threshold", 0, 0, 10, 0.05, None, "mdi:cash-check"),
     ParamSpec("calibration_escalation_pct_per_week", 10, 0, 100, 1, "%", "mdi:trending-up"),
+    ParamSpec("forecast_min_accuracy", 90, 50, 100, 1, "%", "mdi:crystal-ball"),
+    ParamSpec("forecast_far_factor", 1.25, 1, 3, 0.05, None, "mdi:chart-bell-curve"),
 )
