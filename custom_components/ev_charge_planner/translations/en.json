@@ -25,11 +25,9 @@
   "options": {
     "step": {
       "init": {
-        "title": "Time windows",
+        "title": "Departure and horizon",
         "data": {
-          "night_end_hour": "Night ends at (hour)",
-          "day_start_hour": "Day window starts at (hour)",
-          "day_end_hour": "Day window ends at (hour)",
+          "default_departure_hour": "Departure on days without away hours (hour)",
           "horizon_days": "Planning horizon (days)",
           "efficiency_fallback": "Efficiency if no sensor (kWh/km)"
         }
@@ -51,10 +49,10 @@
         "name": "Target SoC"
       },
       "next_charge_start": {
-        "name": "Next charge start"
+        "name": "Next charging hour"
       },
-      "next_charge_end": {
-        "name": "Next charge end"
+      "charge_until": {
+        "name": "Charge until"
       },
       "plan": {
         "name": "Plan"
@@ -75,6 +73,9 @@
       },
       "battery_kwh": {
         "name": "Battery capacity"
+      },
+      "charge_kw": {
+        "name": "Charging power"
       },
       "calibration_soc": {
         "name": "Calibration SoC"

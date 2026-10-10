@@ -1,7 +1,8 @@
-"""Sensors: target SoC, next charge window and the full plan."""
+"""Sensors: target SoC, next charge, charge-until time and the full plan."""
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
@@ -11,10 +12,10 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
 from .coordinator import PlannerCoordinator
+from .planner import ChargeHour
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
@@ -22,11 +23,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     async_add_entities(
         [
             TargetSocSensor(coordinator),
-            NextChargeSensor(coordinator, "next_charge_start", 0),
-            NextChargeSensor(coordinator, "next_charge_end", 1),
+            NextChargeSensor(coordinator),
+            ChargeUntilSensor(coordinator),
             PlanSensor(coordinator),
         ]
     )
+
+
+def _hour(ch: ChargeHour) -> dict[str, Any]:
+    return {
+        "start": ch.start.isoformat(),
+        "pct": ch.pct,
+        "price": ch.raw_price,
+        "price_adjusted": ch.price,
+        "known": ch.known,
+        "calibration": ch.calibration,
+    }
 
 
 class _Base(CoordinatorEntity[PlannerCoordinator], SensorEntity):
@@ -44,7 +56,10 @@ class _Base(CoordinatorEntity[PlannerCoordinator], SensorEntity):
 
 
 class TargetSocSensor(_Base):
-    """Target SoC for the next charge – feed this to EV Smart Charging or similar."""
+    """Target SoC to hand over – feed this to EV Smart Charging or similar.
+
+    Charge to this level in the cheapest hours before ``charge_until``.
+    """
 
     _attr_native_unit_of_measurement = PERCENTAGE
     _attr_icon = "mdi:battery-charging-high"
@@ -59,34 +74,56 @@ class TargetSocSensor(_Base):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         p = self.coordinator.data
-        nc = p.next_charge if p else None
+        if not p:
+            return {}
         return {
-            "next_charge_kind": nc.kind if nc else None,
-            "next_charge_date": nc.day.isoformat() if nc else None,
-            "next_charge_best_hour": nc.best_hour if nc else None,
-            "next_charge_price": nc.raw_price if nc else None,
-            "next_charge_price_adjusted": nc.price if nc else None,
+            "charge_until": p.charge_until.isoformat(),
+            "charge_now": p.charge_now,
+            "calibration": p.calibration,
+            "unmet": p.unmet,
         }
 
 
 class NextChargeSensor(_Base):
-    """Start (index 0) or end (index 1) of the next charging window."""
+    """Start of the first planned charging hour (known or forecast price)."""
 
     _attr_device_class = SensorDeviceClass.TIMESTAMP
 
-    def __init__(self, coordinator: PlannerCoordinator, key: str, index: int) -> None:
-        super().__init__(coordinator, key)
-        self._index = index
+    def __init__(self, coordinator: PlannerCoordinator) -> None:
+        super().__init__(coordinator, "next_charge_start")
 
     @property
-    def native_value(self):
+    def native_value(self) -> datetime | None:
         p = self.coordinator.data
-        win = PlannerCoordinator.window_datetimes(p.next_charge if p else None, dt_util.DEFAULT_TIME_ZONE)
-        return win[self._index] if win else None
+        return p.next_charge.start if p and p.next_charge else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        p = self.coordinator.data
+        return _hour(p.next_charge) if p and p.next_charge else {}
+
+
+class ChargeUntilSensor(_Base):
+    """End of the hand-over: the next departure or the last known price hour.
+
+    Use it as the completion time of EV Smart Charging or a similar charger
+    integration.
+    """
+
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_icon = "mdi:clock-end"
+
+    def __init__(self, coordinator: PlannerCoordinator) -> None:
+        super().__init__(coordinator, "charge_until")
+
+    @property
+    def native_value(self) -> datetime | None:
+        p = self.coordinator.data
+        return p.charge_until if p else None
 
 
 class PlanSensor(_Base):
-    """The full plan as attributes (one row per date) for dashboards."""
+    """The full plan as attributes (planned hours and one row per date) for dashboards."""
 
     _attr_icon = "mdi:calendar-clock"
 
@@ -98,35 +135,30 @@ class PlanSensor(_Base):
         p = self.coordinator.data
         if not p:
             return None
-        return p.next_charge.day.isoformat() if p.next_charge else "none"
+        return p.next_charge.start.date().isoformat() if p.next_charge else "none"
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         p = self.coordinator.data
         if not p:
             return {}
-        rows = []
-        for r in p.rows:
-            rows.append(
-                {
-                    "date": r.day.isoformat(),
-                    "type": r.day_type,
-                    "km": round(r.km, 1),
-                    "floor": r.floor,
-                    "night_price": r.night.raw_price if r.night else None,
-                    "night_price_adjusted": r.night.price if r.night else None,
-                    "night_hour": r.night.best_hour if r.night else None,
-                    "night_available": r.night.available if r.night else None,
-                    "night_target": r.night_target,
-                    "day_price": r.day_window.raw_price if r.day_window else None,
-                    "day_price_adjusted": r.day_window.price if r.day_window else None,
-                    "day_hour": r.day_window.best_hour if r.day_window else None,
-                    "day_target": r.day_target,
-                    "forecast_factor": (r.night or r.day_window).factor if (r.night or r.day_window) else 1.0,
-                    "soc_departure": r.soc_departure,
-                    "calibration": r.calibration,
-                    "away_overnight": r.away_overnight,
-                    "status": r.status,
-                }
-            )
-        return {"rows": rows}
+        rows = [
+            {
+                "date": r.day.isoformat(),
+                "type": r.day_type,
+                "km": round(r.km, 1),
+                "floor": r.floor,
+                "departure_hour": r.departure_hour,
+                "requirement": r.requirement,
+                "charge_pct": r.charge_pct,
+                "charge_hours": [ch.start.hour for ch in r.charge_hours],
+                "charge_known": all(ch.known for ch in r.charge_hours),
+                "soc_departure": r.soc_departure,
+                "forecast_factor": r.forecast_factor,
+                "calibration": r.calibration,
+                "away_overnight": r.away_overnight,
+                "status": r.status,
+            }
+            for r in p.rows
+        ]
+        return {"hours": [_hour(ch) for ch in p.hours], "rows": rows}

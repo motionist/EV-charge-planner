@@ -76,47 +76,68 @@ def test_factor_floor_and_negative_prices():
 # Planning
 # --------------------------------------------------------------------------- #
 
-# Friday 9/10 night (known) 0.74, Saturday 10/10 night (forecast) 0.65 and a
-# clearly cheaper Sunday night (forecast 0.40 ⇒ adjusted ≈ 0.51) that ends the
-# coverage. Saturday: 150 km = 40 % + 100 km buffer 27 % → 67 %.
+# Friday 9/10 03 (known) 0.74, Saturday 10/10 03 (forecast) 0.65 and a clearly
+# cheaper Sunday 03 (forecast 0.40). Saturday: 150 km = 40 % + 100 km buffer
+# 27 % → 67 % at departure 09.
 NIGHTS = prices_for(oct(9), 8, {(oct(9), 3): 0.74, (oct(10), 3): 0.65, (oct(11), 3): 0.40})
 TRIP_SAT = {oct(10): DayInfo(oct(10), km=150, away_hours=[(9, 18)])}
 EVENING_THU = datetime(2026, 10, 8, 20, 0, tzinfo=TZ)
 
 
-def test_known_night_beats_slightly_cheaper_forecast():
-    """0.65 forecast at 84 % accuracy ⇒ 0.77 > 0.74 known ⇒ Friday covers Saturday."""
-    p = plan(EVENING_THU, 60, TRIP_SAT, NIGHTS, settings(), known_until=oct(9))
+def hours_of(row):
+    return [ch.start.hour for ch in row.charge_hours]
+
+
+def test_known_hour_beats_slightly_cheaper_forecast():
+    """0.65 forecast at 84 % accuracy ⇒ 0.77 > 0.74 known ⇒ Friday 03 gets the full hour."""
+    s = settings()
+    rate = s.charge_pct_per_hour()
+    p = plan(EVENING_THU, 60, TRIP_SAT, NIGHTS, s, known_until=oct(9))
     rows = by_day(p)
-    assert rows[oct(9)].night_target == 67
-    assert rows[oct(10)].night_target is None
-    sat = rows[oct(10)].night
-    assert sat.raw_price == 0.65 and sat.price == pytest.approx(0.65 / (1 - 0.21 / sat_mean()))
-    assert rows[oct(9)].night.factor == 1.0
+    assert hours_of(rows[oct(9)]) == [3] and rows[oct(9)].charge_pct == pytest.approx(rate, abs=0.01)
+    assert hours_of(rows[oct(10)]) == [3] and rows[oct(10)].charge_pct < rate - 1
+    assert rows[oct(10)].forecast_factor == pytest.approx(1 - 0.21 / known_mean())
+    assert rows[oct(9)].forecast_factor == 1.0
+    sat = rows[oct(10)].charge_hours[0]
+    assert sat.raw_price == 0.65 and sat.price == pytest.approx(0.65 / rows[oct(10)].forecast_factor)
+    # Friday 03 is known and before Friday's departure → handed over now.
+    assert p.target_soc == round(60 + rate) and p.charge_until == datetime(2026, 10, 9, 8, 0, tzinfo=TZ)
 
 
-def sat_mean() -> float:
+def known_mean() -> float:
     known = [p for (d, _h), p in NIGHTS.items() if d <= oct(9)]
     return sum(known) / len(known)
 
 
 def test_without_adjustment_planner_waits_for_forecast():
-    """Same week, forecast trusted: Friday only covers Friday, Saturday charges."""
-    p = plan(EVENING_THU, 60, TRIP_SAT, NIGHTS, settings(mae=()), known_until=oct(9))
+    """Same week, forecast trusted: Saturday 03 gets the full hour, Friday 03 the rest."""
+    s = settings(mae=())
+    rate = s.charge_pct_per_hour()
+    p = plan(EVENING_THU, 60, TRIP_SAT, NIGHTS, s, known_until=oct(9))
     rows = by_day(p)
-    assert rows[oct(9)].night_target is None  # 60 % ≥ Friday's floor, nothing else before Saturday night
-    assert rows[oct(10)].night_target == 67
+    assert hours_of(rows[oct(10)]) == [3] and rows[oct(10)].charge_pct == pytest.approx(rate, abs=0.01)
+    assert not rows[oct(10)].charge_hours[0].known
+    assert rows[oct(9)].charge_pct < rate - 1
+    assert p.target_soc < round(60 + rate)
 
 
-def test_known_day_window_beats_forecast_night():
+def test_known_day_hour_beats_forecast():
     """Friday 10:00, tomorrow not yet published: a known 0.739 at noon beats a
-    0.664 forecast tonight at 84 % accuracy (adjusted 0.79)."""
+    0.664 forecast tonight at 84 % accuracy (adjusted 0.79), and a known 1.30
+    beats a forecast 1.30."""
     now = datetime(2026, 10, 9, 10, 0, tzinfo=TZ)
     prices = prices_for(oct(9), 8, {(oct(9), 12): 0.739, (oct(10), 3): 0.664, (oct(11), 3): 0.40})
-    p = plan(now, 50, TRIP_SAT, prices, settings(), known_until=oct(9))
-    assert p.next_charge is not None
-    assert p.next_charge.kind == "day" and p.next_charge.day == oct(9)
-    assert p.target_soc == 67
+    s = settings()
+    rate = s.charge_pct_per_hour()
+    p = plan(now, 50, TRIP_SAT, prices, s, known_until=oct(9))
+    rows = by_day(p)
+    assert p.next_charge is not None and p.next_charge.start.hour == 12 and p.next_charge.known
+    assert rows[oct(9)].charge_hours[0].pct == pytest.approx(rate, abs=0.01)
+    # The rest is charged tonight at a known 1.30 rather than a forecast 1.30.
+    assert hours_of(rows[oct(9)]) == [12, 23]
+    assert p.charge_until == datetime(2026, 10, 10, 0, 0, tzinfo=TZ)
+    assert p.target_soc == round(50 + rows[oct(9)].charge_pct)
 
     trusted = plan(now, 50, TRIP_SAT, prices, settings(mae=()), known_until=oct(9))
-    assert trusted.next_charge.kind == "night" and trusted.next_charge.day == oct(10)
+    assert hours_of(by_day(trusted)[oct(9)]) == [12]
+    assert trusted.target_soc == round(50 + rate)

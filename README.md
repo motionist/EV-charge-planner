@@ -7,36 +7,43 @@ Calculation of cheapest charging based on planned consumption (estimated based o
 > integration around it is a first skeleton. See [docs/DESIGN.md](docs/DESIGN.md).
 
 A Home Assistant custom integration (installable via HACS) that looks up to
-7 days ahead at electricity prices and your planned trips, and publishes the
-battery level your EV should have after the next charging opportunity –
-enough for the trips plus a safety buffer, bought at the cheapest hours.
+7 days ahead, **hour by hour**, at electricity prices and your planned trips,
+and works out in which hours the car should charge and how much – enough for
+the trips plus a safety buffer, bought at the cheapest hours.
 
 ## What it does
 
-* Considers every **night** (00–08) and every **day window** when the car is
-  home (08–17 outside your away hours) as a charging opportunity.
-* Each opportunity charges just enough to reach the next **cheaper**
-  opportunity: a floor at every departure (weekday/weekend), the trips in
-  between and a **buffer** (default 100 km) left after them – capped at a
-  max level (default 90 %).
-* Simulates the week, so a capped charge that cannot cover a long trip later
-  is topped up at a later opportunity.
-* Optional periodic **battery calibration** charge on a cheap night.
+* Every hour the car is **home** is a candidate – no fixed night or day
+  windows. The current hour counts with its remaining minutes.
+* Every **departure** (first away hour from the calendar, else 08:00) needs
+  a floor (weekday/weekend), or the day's trips plus a **buffer** (default
+  100 km), or the max level before a night away.
+* Each need is charged in the **cheapest earlier hour** with room. So an
+  hour only charges enough to reach a **cheaper** hour later; if nothing
+  cheaper comes in time it **tops up** – never above the max level (default
+  90 %). A long trip later in the week is topped up in the cheapest hour
+  before it.
+* Optional periodic **battery calibration** charge in a cheap hour.
 * Uses known prices first, then a price forecast (e.g. Open Spot Forecast),
   then a fallback forecast (e.g. Energi Data Service).
 * Weighs a **known price higher than a forecast**: when a forecast day's
   accuracy (from the forecast's own error statistics) is below 90 %, its
   prices are divided by the accuracy before they are compared – so a known 0.74 today beats a 0.65 forecast for
   tomorrow at 84 % accuracy (0.77). See [DESIGN.md §5.0](docs/DESIGN.md).
+* **Hands over** only the certain part: the hours with known prices before
+  the next departure (max 24 h) become a target SoC and a "charge until"
+  time for EV Smart Charging or your charger integration. The rest is the
+  expected plan, recomputed as prices arrive.
 
 ## Entities
 
 | Entity | Description |
 |---|---|
-| `sensor.<name>_target_soc` | Target SoC for the next charge – feed it to EV Smart Charging, your charger integration or an automation. |
-| `sensor.<name>_next_charge_start` / `_end` | The next charging window. |
-| `sensor.<name>_plan` | The full plan in the `rows` attribute (one row per date) for your own dashboard – see [docs/example-card.md](docs/example-card.md). |
-| `number.<name>_*` | Parameters: floors, max level, buffer (km), battery capacity, calibration settings, forecast min. accuracy and far factor. |
+| `sensor.<name>_target_soc` | Target SoC to hand over – charge to this level before *charge until*. Feed it to EV Smart Charging, your charger integration or an automation. |
+| `sensor.<name>_charge_until` | End of the hand-over (next departure or last known price hour) – e.g. EV Smart Charging's completion time. |
+| `sensor.<name>_next_charge_start` | The first planned charging hour (known or forecast). |
+| `sensor.<name>_plan` | The full plan: `hours` (every planned hour with %, price and known/forecast) and `rows` (one per date) for your own dashboard – see [docs/example-card.md](docs/example-card.md). |
+| `number.<name>_*` | Parameters: floors, max level, buffer (km), battery capacity, charging power, calibration settings, forecast min. accuracy and far factor. |
 
 ## Inputs (v0.1)
 

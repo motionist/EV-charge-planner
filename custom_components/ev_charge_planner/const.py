@@ -22,16 +22,12 @@ CONF_HOLIDAY_CALENDAR = "holiday_calendar"
 CONF_LAST_CALIBRATION_ENTITY = "last_calibration_entity"
 
 # Options
-CONF_NIGHT_END_HOUR = "night_end_hour"
-CONF_DAY_START_HOUR = "day_start_hour"
-CONF_DAY_END_HOUR = "day_end_hour"
+CONF_DEFAULT_DEPARTURE_HOUR = "default_departure_hour"
 CONF_HORIZON_DAYS = "horizon_days"
 CONF_EFFICIENCY_FALLBACK = "efficiency_fallback"
 
 DEFAULT_OPTIONS = {
-    CONF_NIGHT_END_HOUR: 8,
-    CONF_DAY_START_HOUR: 8,
-    CONF_DAY_END_HOUR: 17,
+    CONF_DEFAULT_DEPARTURE_HOUR: 8,
     CONF_HORIZON_DAYS: 7,
     CONF_EFFICIENCY_FALLBACK: 0.20,
 }
@@ -58,6 +54,7 @@ PARAMS: tuple[ParamSpec, ...] = (
     ParamSpec("max_level", 90, 50, 100, 1, "%", "mdi:battery-lock"),
     ParamSpec("buffer_km", 100, 0, 300, 10, "km", "mdi:map-marker-distance"),
     ParamSpec("battery_kwh", 75, 10, 200, 0.5, "kWh", "mdi:car-battery"),
+    ParamSpec("charge_kw", 11, 1, 50, 0.1, "kW", "mdi:ev-station"),
     ParamSpec("calibration_soc", 100, 50, 100, 1, "%", "mdi:battery-sync"),
     ParamSpec("calibration_interval_days", 0, 0, 90, 1, "d", "mdi:calendar-sync"),
     ParamSpec("calibration_early_days", 0, 0, 90, 1, "d", "mdi:calendar-arrow-left"),

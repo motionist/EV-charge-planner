@@ -25,11 +25,9 @@
   "options": {
     "step": {
       "init": {
-        "title": "Tidsvinduer",
+        "title": "Afgang og horisont",
         "data": {
-          "night_end_hour": "Natten slutter kl.",
-          "day_start_hour": "Dagvinduet starter kl.",
-          "day_end_hour": "Dagvinduet slutter kl.",
+          "default_departure_hour": "Afgang uden ude-tider (kl.)",
           "horizon_days": "Planlægningshorisont (dage)",
           "efficiency_fallback": "Effektivitet uden sensor (kWh/km)"
         }
@@ -51,10 +49,10 @@
         "name": "Mål-SoC"
       },
       "next_charge_start": {
-        "name": "Næste ladning start"
+        "name": "Næste ladetime"
       },
-      "next_charge_end": {
-        "name": "Næste ladning slut"
+      "charge_until": {
+        "name": "Lad færdig senest"
       },
       "plan": {
         "name": "Ladeplan"
@@ -75,6 +73,9 @@
       },
       "battery_kwh": {
         "name": "Batterikapacitet"
+      },
+      "charge_kw": {
+        "name": "Ladeeffekt"
       },
       "calibration_soc": {
         "name": "Kalibrerings-SoC"

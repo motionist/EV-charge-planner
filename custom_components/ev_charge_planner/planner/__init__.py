@@ -1,19 +1,20 @@
 """EV charge planner core (pure Python, no Home Assistant imports)."""
 
-from .core import adjust_prices, build_timeline, forecast_factors, merge_prices, plan, target_for
-from .models import DayInfo, HourPrice, Opportunity, Plan, PlanRow, Settings
+from .core import adjust_prices, allocate, build_slots, forecast_factors, merge_prices, plan, requirement
+from .models import ChargeHour, DayInfo, HourPrice, Plan, PlanRow, Settings
 
 __all__ = [
+    "ChargeHour",
     "DayInfo",
     "HourPrice",
-    "Opportunity",
     "Plan",
     "PlanRow",
     "Settings",
     "adjust_prices",
-    "build_timeline",
+    "allocate",
+    "build_slots",
     "forecast_factors",
     "merge_prices",
     "plan",
-    "target_for",
+    "requirement",
 ]

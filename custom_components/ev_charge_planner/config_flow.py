@@ -1,4 +1,4 @@
-"""Config flow: pick the entities the planner reads; options for time windows."""
+"""Config flow: pick the entities the planner reads; options for departure and horizon."""
 
 from __future__ import annotations
 
@@ -13,8 +13,7 @@ from .adapters.prices import ADAPTER_ENERGI_DATA_SERVICE, ADAPTER_GENERIC, ADAPT
 from .const import (
     CONF_AWAY_HOURS_ENTITY,
     CONF_AWAY_NIGHTS_ENTITY,
-    CONF_DAY_END_HOUR,
-    CONF_DAY_START_HOUR,
+    CONF_DEFAULT_DEPARTURE_HOUR,
     CONF_EFFICIENCY_ENTITY,
     CONF_EFFICIENCY_FALLBACK,
     CONF_FORECAST_ENTITY,
@@ -23,7 +22,6 @@ from .const import (
     CONF_HORIZON_DAYS,
     CONF_KM_ENTITY,
     CONF_LAST_CALIBRATION_ENTITY,
-    CONF_NIGHT_END_HOUR,
     CONF_PLUGGED_ENTITY,
     CONF_PRICE_ADAPTER,
     CONF_PRICE_ENTITY,
@@ -66,7 +64,7 @@ USER_SCHEMA = vol.Schema(
 
 
 def _hour() -> selector.NumberSelector:
-    return selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=24, step=1, mode=selector.NumberSelectorMode.BOX))
+    return selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=23, step=1, mode=selector.NumberSelectorMode.BOX))
 
 
 class EvChargePlannerConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -87,7 +85,7 @@ class EvChargePlannerConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class EvChargePlannerOptionsFlow(OptionsFlow):
-    """Time windows, horizon and efficiency fallback."""
+    """Default departure hour, horizon and efficiency fallback."""
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         if user_input is not None:
@@ -95,9 +93,7 @@ class EvChargePlannerOptionsFlow(OptionsFlow):
         cur = {**DEFAULT_OPTIONS, **self.config_entry.options}
         schema = vol.Schema(
             {
-                vol.Required(CONF_NIGHT_END_HOUR, default=cur[CONF_NIGHT_END_HOUR]): _hour(),
-                vol.Required(CONF_DAY_START_HOUR, default=cur[CONF_DAY_START_HOUR]): _hour(),
-                vol.Required(CONF_DAY_END_HOUR, default=cur[CONF_DAY_END_HOUR]): _hour(),
+                vol.Required(CONF_DEFAULT_DEPARTURE_HOUR, default=cur[CONF_DEFAULT_DEPARTURE_HOUR]): _hour(),
                 vol.Required(CONF_HORIZON_DAYS, default=cur[CONF_HORIZON_DAYS]): selector.NumberSelector(
                     selector.NumberSelectorConfig(min=1, max=7, step=1, mode=selector.NumberSelectorMode.BOX)
                 ),

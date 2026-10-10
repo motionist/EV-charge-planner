@@ -1,4 +1,4 @@
-"""Planner core – timeline, targets, calibration and simulation.
+"""Planner core – hourly price plan, calibration and hand-over.
 
 See docs/DESIGN.md §4–5. Pure Python, no Home Assistant imports.
 """
@@ -7,11 +7,13 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta
+from datetime import UTC, date, datetime, timedelta
 
-from .models import DayInfo, HourPrice, Opportunity, Plan, PlanRow, Settings
+from .models import ChargeHour, DayInfo, HourPrice, Plan, PlanRow, Settings
 
 HourMap = dict[tuple[date, int], float]
+
+EPS = 0.05  # percentage points treated as "nothing"
 
 
 def merge_prices(*layers: Iterable[HourPrice], tz=None) -> HourMap:
@@ -76,182 +78,213 @@ def floor_for(day: date, info: DayInfo | None, s: Settings) -> float:
     return s.floor_weekday if day_type(day, info) == "weekday" else s.floor_weekend
 
 
+def departure_hour(info: DayInfo | None, s: Settings) -> int:
+    """First hour the car leaves on a date: its first away hour, else the default."""
+    if info is not None and info.away_hours:
+        return min(start for start, _end in info.away_hours)
+    return s.default_departure_hour
+
+
+def consumption(info: DayInfo | None, s: Settings) -> float:
+    """Battery percentage used by a date's trips."""
+    return info.km * s.pct_per_km() if info is not None else 0.0
+
+
+def requirement(day: date, info: DayInfo | None, s: Settings) -> float:
+    """SoC needed at departure on ``day`` (DESIGN §5.1).
+
+    The floor, or the date's trips plus the buffer, or the max level before an
+    away night – capped at the max level (or the floor, if that is higher).
+    """
+    floor = floor_for(day, info, s)
+    cons = consumption(info, s)
+    need = max(
+        floor,
+        cons + s.buffer_pct() if cons > 0 else 0.0,
+        s.max_level if info is not None and info.away_overnight else 0.0,
+    )
+    return min(need, max(s.max_level, floor))
+
+
+def is_home(day: date, hour: int, days: Mapping[date, DayInfo], s: Settings) -> bool:
+    """Whether the car is at home (and can charge) in the given hour."""
+    info = days.get(day)
+    if info is not None:
+        if any(start <= hour < end for start, end in info.away_hours):
+            return False
+        if info.away_overnight and hour >= departure_hour(info, s):
+            return False
+    prev = days.get(day - timedelta(days=1))
+    return not (prev is not None and prev.away_overnight and hour < s.default_departure_hour)
+
+
 # --------------------------------------------------------------------------- #
-# Timeline
+# Hourly slots
 # --------------------------------------------------------------------------- #
 
 
 @dataclass
-class _Event:
-    kind: str  # opp | depart | drive
-    day: date
-    opp: Opportunity | None = None
-    floor: float = 0.0
-    pct: float = 0.0
+class _Slot:
+    start: datetime
+    price: float | None  # adjusted
+    raw_price: float | None
+    known: bool
+    capacity: float  # percentage that can be charged in this hour
+    use: float = 0.0  # consumption when departing in this hour
+    requirement: float | None = None  # SoC needed when departing in this hour
+    departs: bool = False
 
 
-def _clip(intervals: list[tuple[int, int]], lo: int, hi: int) -> list[tuple[int, int]]:
+def build_slots(
+    now: datetime,
+    days: Mapping[date, DayInfo],
+    prices: HourMap,
+    adjusted: HourMap,
+    known_until: date | None,
+    s: Settings,
+) -> list[_Slot]:
+    """One slot per hour from the current hour over the horizon."""
+    tz = now.tzinfo
+    t0 = now.replace(minute=0, second=0, microsecond=0)
+    t0_utc = t0.astimezone(UTC)
+    remaining = 1 - (now - t0).total_seconds() / 3600
+    rate = s.charge_pct_per_hour()
+    departed: set[date] = set()
+    slots: list[_Slot] = []
+    for i in range(s.horizon_days * 24):
+        start = (t0_utc + timedelta(hours=i)).astimezone(tz)
+        d, h = start.date(), start.hour
+        raw = prices.get((d, h))
+        home = is_home(d, h, days, s)
+        cap = 0.0 if raw is None or not home else rate * (remaining if i == 0 else 1.0)
+        slot = _Slot(start, adjusted.get((d, h)), raw, known_until is None or d <= known_until, cap)
+        info = days.get(d)
+        # A departure in the current hour has already happened unless it is exactly now.
+        if h == departure_hour(info, s) and d not in departed and (i > 0 or now == t0):
+            departed.add(d)
+            prev = days.get(d - timedelta(days=1))
+            slot.departs = True
+            slot.use = consumption(info, s)
+            # After an away night the car does not depart from home.
+            if not (prev is not None and prev.away_overnight):
+                slot.requirement = requirement(d, info, s)
+        slots.append(slot)
+    return slots
+
+
+def _levels(soc: float, slots: list[_Slot], q: list[float], upto: int) -> list[float]:
+    """SoC at the start of every slot up to and including ``upto``."""
     out = []
-    for s, e in intervals:
-        s2, e2 = max(s, lo), min(e, hi)
-        if e2 > s2:
-            out.append((s2, e2))
+    level = soc
+    for k in range(upto + 1):
+        out.append(level)
+        level += q[k] - slots[k].use
     return out
 
 
-def _hours(intervals: list[tuple[int, int]]) -> int:
-    return sum(e - s for s, e in intervals)
+def allocate(soc: float, slots: list[_Slot], q: list[float], s: Settings) -> float:
+    """Cover every departure's requirement in time order (DESIGN §5.1).
 
-
-def _is_away(hour: int, intervals: list[tuple[int, int]]) -> bool:
-    return any(s <= hour < e for s, e in intervals)
-
-
-def _night(day: date, prices: HourMap, s: Settings, from_hour: int, available: bool) -> Opportunity:
-    priced = [(h, prices[(day, h)]) for h in range(from_hour, s.night_end_hour) if (day, h) in prices]
-    if priced:
-        best_h, best_p = min(priced, key=lambda x: x[1])
-    else:
-        best_h, best_p = None, None
-    return Opportunity("night", day, best_p, best_h, from_hour, s.night_end_hour, available)
-
-
-def _day_window(day: date, info: DayInfo | None, prices: HourMap, s: Settings, from_hour: int) -> Opportunity | None:
-    away = info.away_hours if info else []
-    home = [h for h in range(max(from_hour, s.day_start_hour), s.day_end_hour) if not _is_away(h, away)]
-    priced = [(h, prices[(day, h)]) for h in home if (day, h) in prices]
-    if not priced:
-        return None
-    best_h, best_p = min(priced, key=lambda x: x[1])
-    start = end = best_h
-    while start - 1 in home:
-        start -= 1
-    while end + 1 in home:
-        end += 1
-    return Opportunity("day", day, best_p, best_h, start, end + 1, True)
-
-
-def _drive_split(info: DayInfo | None, window: Opportunity | None, from_hour: int, s: Settings, today: bool) -> tuple[float, float]:
-    """Consumption (%) before and after the day window."""
-    if info is None or info.km <= 0:
-        return 0.0, 0.0
-    total_pct = info.km * s.pct_per_km()
-    away = info.away_hours
-    if today:
-        remaining = _clip(away, from_hour, 24)
-        if _hours(away) == 0:
-            return 0.0, 0.0
-        total_pct *= _hours(remaining) / _hours(away)
-        away = remaining
-    if _hours(away) == 0:
-        return total_pct, 0.0
-    if window is None:
-        return total_pct, 0.0
-    before = _hours(_clip(away, 0, window.start_hour)) / _hours(away)
-    return total_pct * before, total_pct * (1 - before)
-
-
-def build_timeline(now: datetime, days: Mapping[date, DayInfo], prices: HourMap, s: Settings) -> tuple[list[_Event], date, bool]:
-    """Chronological events from now. Returns (events, first_date, night_mode)."""
-    today = now.date()
-    night_mode = now.hour < s.night_end_hour
-    events: list[_Event] = []
-
-    if not night_mode:
-        info = days.get(today)
-        win = _day_window(today, info, prices, s, now.hour) if now.hour < s.day_end_hour else None
-        before, after = _drive_split(info, win, now.hour, s, today=True)
-        if before:
-            events.append(_Event("drive", today, pct=before))
-        if win:
-            events.append(_Event("opp", today, opp=win))
-        if after:
-            events.append(_Event("drive", today, pct=after))
-        first = today + timedelta(days=1)
-    else:
-        first = today
-
-    for i in range(s.horizon_days):
-        d = first + timedelta(days=i)
-        info = days.get(d)
-        prev = days.get(d - timedelta(days=1))
-        is_today = d == today
-        night_from = now.hour if is_today else 0
-        events.append(_Event("opp", d, opp=_night(d, prices, s, night_from, available=not (prev and prev.away_overnight))))
-        events.append(_Event("depart", d, floor=floor_for(d, info, s)))
-        win = _day_window(d, info, prices, s, now.hour if is_today else 0)
-        before, after = _drive_split(info, win, now.hour if is_today else 0, s, today=is_today and not night_mode)
-        if before:
-            events.append(_Event("drive", d, pct=before))
-        if win:
-            events.append(_Event("opp", d, opp=win))
-        if after:
-            events.append(_Event("drive", d, pct=after))
-    return events, first, night_mode
-
-
-# --------------------------------------------------------------------------- #
-# Targets
-# --------------------------------------------------------------------------- #
-
-
-def target_for(events: list[_Event], idx: int, days: Mapping[date, DayInfo], s: Settings) -> int:
-    """Target SoC for the opportunity at ``events[idx]`` (DESIGN §5.1)."""
-    opp = events[idx].opp
-    assert opp is not None
-    if opp.kind == "night":
-        info = days.get(opp.day)
-        if info is not None and info.away_overnight:
-            return round(s.max_level)
-    ref = opp.price
-    consumed = 0.0
-    need = 0.0
-    first_floor: float | None = None
-    for ev in events[idx + 1 :]:
-        if ev.kind == "opp":
-            o = ev.opp
-            if ref is not None and o is not None and o.available and o.price is not None and o.price < ref:
+    Each deficit is charged in the cheapest earlier hour with spare capacity
+    (the latest of equally cheap hours),
+    without the battery exceeding the max level before the departure. Charging
+    therefore only reaches the next cheaper hour unless nothing cheaper comes
+    in time, in which case it tops up (to at most the max level). ``q`` is
+    updated in place; returns the percentage that could not be planned.
+    """
+    unmet = 0.0
+    for j, slot in enumerate(slots):
+        if slot.requirement is None:
+            continue
+        for _ in range(len(slots) + 1):
+            levels = _levels(soc, slots, q, j)
+            deficit = slot.requirement - levels[j]
+            if deficit <= EPS:
                 break
-        elif ev.kind == "depart":
-            if first_floor is None:
-                first_floor = ev.floor
-            need = max(need, ev.floor + consumed)
-        elif ev.kind == "drive":
-            consumed += ev.pct
-    extra = consumed + s.buffer_pct() if consumed > 0 else 0.0
-    cap = max(s.max_level, first_floor or 0.0)
-    return round(min(max(need, extra), cap))
+            # suffix[i] = highest SoC between charging in slot i and departure j
+            suffix = [0.0] * (j + 1)
+            highest = float("-inf")
+            for k in range(j, -1, -1):
+                suffix[k] = highest
+                highest = max(highest, levels[k])
+            best: int | None = None
+            best_room = 0.0
+            for i in range(j):
+                price = slots[i].price
+                if price is None:
+                    continue
+                room = min(slots[i].capacity - q[i], s.max_level - suffix[i])
+                # On equal prices take the later hour: it postpones the decision.
+                if room > EPS and (best is None or price <= slots[best].price):  # type: ignore[operator]
+                    best, best_room = i, room
+            if best is None:
+                unmet += deficit
+                break
+            q[best] += min(deficit, best_room)
+    return unmet
 
 
-def _cheaper_later(events: list[_Event], idx: int, ref: float) -> bool:
-    for ev in events[idx + 1 :]:
-        o = ev.opp
-        if ev.kind == "opp" and o is not None and o.available and o.price is not None and o.price < ref:
-            return True
-    return False
+def _days_since_calibration(now: datetime, s: Settings) -> float:
+    if s.last_calibration is None:
+        return 999.0
+    return (now - s.last_calibration).total_seconds() / 86400
 
 
-def calibration_due(events: list[_Event], idx: int, s: Settings, last_cal: datetime | None, tz) -> bool:
-    """Whether the night at ``events[idx]`` should be a calibration night (DESIGN §5.2)."""
-    opp = events[idx].opp
-    if s.calibration_interval_days <= 0 or opp is None or opp.kind != "night" or opp.price is None:
-        return False
-    start = datetime.combine(opp.day, time(0), tzinfo=tz)
-    days_since = 999.0 if last_cal is None else (start - last_cal).total_seconds() / 86400
+def calibrate(now: datetime, soc: float, slots: list[_Slot], q: list[float], until: int, s: Settings) -> list[int]:
+    """Plan a calibration charge before slot ``until`` when due (DESIGN §5.2).
+
+    The cheapest home hour before ``until`` must be ≤ the price threshold and
+    no later hour cheaper (early grab), or ≤ the escalated threshold once the
+    interval has passed. Charges to the calibration SoC in the cheapest of
+    those hours and returns their indexes (empty when not due).
+    """
+    if s.calibration_interval_days <= 0 or until <= 0:
+        return []
+    before = [i for i in range(until) if slots[i].capacity > 0 and slots[i].price is not None]
+    if not before:
+        return []
+    cheapest = min(slots[i].price for i in before)  # type: ignore[type-var]
+    later = [sl.price for sl in slots[until:] if sl.capacity > 0 and sl.price is not None]
+    days_since = _days_since_calibration(now, s)
     early = (
         s.calibration_early_days > 0
         and days_since >= s.calibration_early_days
-        and opp.price <= s.calibration_price_threshold
-        and not _cheaper_later(events, idx, opp.price)
+        and cheapest <= s.calibration_price_threshold
+        and not (later and min(later) < cheapest)
     )
     weeks_over = max((days_since - s.calibration_interval_days) / 7, 0)
     allowed = s.calibration_price_threshold * (1 + s.calibration_escalation_pct_per_week / 100) ** weeks_over
-    due = days_since >= s.calibration_interval_days and opp.price <= allowed
-    return early or due
+    due = days_since >= s.calibration_interval_days and cheapest <= allowed
+    if not (early or due):
+        return []
+    need = s.calibration_soc - soc - sum(q[:until])
+    used = []
+    for i in sorted(before, key=lambda i: slots[i].price):  # type: ignore[arg-type,return-value]
+        if need <= EPS:
+            break
+        amount = min(need, slots[i].capacity - q[i])
+        if amount > 0:
+            q[i] += amount
+            need -= amount
+            used.append(i)
+    return used
+
+
+def handover_end(slots: list[_Slot], s: Settings) -> int:
+    """Index of the first slot not handed over to the charger integration.
+
+    The hand-over covers the hours before the next departure, only hours with
+    known prices and at most ``handover_max_hours``.
+    """
+    end = min(len(slots), s.handover_max_hours)
+    for i in range(1, end):
+        if slots[i].requirement is not None or not slots[i].known:
+            return i
+    return end
 
 
 # --------------------------------------------------------------------------- #
-# Simulation
+# Plan
 # --------------------------------------------------------------------------- #
 
 
@@ -263,23 +296,31 @@ def plan(
     s: Settings,
     known_until: date | None = None,
 ) -> Plan:
-    """Simulate the coming days and return the plan (DESIGN §5.0, §5.3–5.4).
+    """Plan charging hour by hour over the horizon (DESIGN §5).
 
     ``known_until`` is the last date with known prices; later dates are
-    forecasts and are adjusted for their accuracy before any comparison.
+    forecasts, adjusted for their accuracy before any comparison (§5.0), and
+    are never handed over to the charger integration. ``None`` treats every
+    price as known.
     """
     factors = forecast_factors(prices, known_until, s)
-    events, first, night_mode = build_timeline(now, days, adjust_prices(prices, factors), s)
-    for ev in events:
-        if ev.opp is not None:
-            ev.opp.factor = factors.get(ev.opp.day, 1.0)
-            if ev.opp.best_hour is not None:
-                ev.opp.raw_price = prices.get((ev.opp.day, ev.opp.best_hour))
-    tz = now.tzinfo
+    slots = build_slots(now, days, prices, adjust_prices(prices, factors), known_until, s)
+    q = [0.0] * len(slots)
+
+    until = handover_end(slots, s)
+    cal_hours = set(calibrate(now, soc, slots, q, until, s))
+    unmet = allocate(soc, slots, q, s)
+
+    charge_now = sum(q[:until])
+    t0 = now.replace(minute=0, second=0, microsecond=0)
+    charge_until = slots[until].start if until < len(slots) else (t0.astimezone(UTC) + timedelta(hours=until)).astimezone(now.tzinfo)
 
     rows: dict[date, PlanRow] = {}
-
-    def row(d: date) -> PlanRow:
+    hours: list[ChargeHour] = []
+    charged = 0.0
+    level = float(soc)
+    for i, slot in enumerate(slots):
+        d = slot.start.date()
         if d not in rows:
             info = days.get(d)
             rows[d] = PlanRow(
@@ -287,61 +328,38 @@ def plan(
                 day_type=day_type(d, info),
                 km=info.km if info else 0.0,
                 floor=floor_for(d, info, s),
-                night=None,
-                night_target=None,
-                day_window=None,
-                day_target=None,
-                soc_departure=soc,
+                departure_hour=None,
+                requirement=None,
+                charge_pct=0.0,
+                charge_hours=[],
+                soc_departure=None,
+                forecast_factor=factors.get(d, 1.0),
                 away_overnight=bool(info and info.away_overnight),
             )
-        return rows[d]
+        row = rows[d]
+        if slot.departs:
+            row.soc_departure = round(level, 1)
+            if slot.requirement is not None:
+                row.departure_hour = slot.start.hour
+                row.requirement = round(slot.requirement, 1)
+                if charged > EPS and row.status != "charge":
+                    row.status = "covered"
+        if q[i] > EPS:
+            ch = ChargeHour(slot.start, round(q[i], 2), slot.price, slot.raw_price, slot.known, i in cal_hours)
+            hours.append(ch)
+            row.charge_hours.append(ch)
+            row.charge_pct = round(row.charge_pct + q[i], 2)
+            row.calibration = row.calibration or ch.calibration
+            row.status = "charge"
+            charged += q[i]
+        level += q[i] - slot.use
 
-    level = float(soc)
-    last_cal = s.last_calibration
-    charged_before = False
-    first_opp: Opportunity | None = None
-    first_target: int | None = None
-    next_charge: Opportunity | None = None
-    next_charge_target: int | None = None
-
-    for i, ev in enumerate(events):
-        if ev.kind == "drive":
-            level = max(level - ev.pct, 0.0)
-            continue
-        r = row(ev.day)
-        if ev.kind == "depart":
-            r.soc_departure = round(level, 1)
-            continue
-        opp = ev.opp
-        assert opp is not None
-        if opp.kind == "night":
-            r.night = opp
-        else:
-            r.day_window = opp
-        if not opp.available:
-            continue
-        tgt = target_for(events, i, days, s)
-        if calibration_due(events, i, s, last_cal, tz):
-            tgt = max(tgt, round(s.calibration_soc))
-            r.calibration = True
-            last_cal = datetime.combine(opp.day, time(0), tzinfo=tz)
-        if first_opp is None:
-            first_opp, first_target = opp, tgt
-        if level < tgt:
-            level = float(tgt)
-            if opp.kind == "night":
-                r.night_target = tgt
-            else:
-                r.day_target = tgt
-            r.status = "charge"
-            charged_before = True
-            if next_charge is None:
-                next_charge, next_charge_target = opp, tgt
-        elif r.status != "charge":
-            r.status = "covered" if charged_before else "not_needed"
-
-    # Publish the target of the next opportunity that actually charges (its
-    # window is in next_charge); fall back to the next opportunity's target.
-    target = next_charge_target if next_charge_target is not None else (first_target or 0)
-    ordered = [rows[d] for d in sorted(rows)]
-    return Plan(target_soc=int(target), next_opportunity=first_opp, next_charge=next_charge, rows=ordered)
+    return Plan(
+        target_soc=int(min(round(soc + charge_now), 100)),
+        charge_until=charge_until,
+        charge_now=round(charge_now, 2),
+        hours=hours,
+        rows=[rows[d] for d in sorted(rows)],
+        unmet=round(unmet, 1),
+        calibration=bool(cal_hours),
+    )

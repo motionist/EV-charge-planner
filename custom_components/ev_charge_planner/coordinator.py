@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -17,8 +17,7 @@ from .adapters.trips import build_days
 from .const import (
     CONF_AWAY_HOURS_ENTITY,
     CONF_AWAY_NIGHTS_ENTITY,
-    CONF_DAY_END_HOUR,
-    CONF_DAY_START_HOUR,
+    CONF_DEFAULT_DEPARTURE_HOUR,
     CONF_EFFICIENCY_ENTITY,
     CONF_EFFICIENCY_FALLBACK,
     CONF_FORECAST_ENTITY,
@@ -27,7 +26,6 @@ from .const import (
     CONF_HORIZON_DAYS,
     CONF_KM_ENTITY,
     CONF_LAST_CALIBRATION_ENTITY,
-    CONF_NIGHT_END_HOUR,
     CONF_PLUGGED_ENTITY,
     CONF_PRICE_ADAPTER,
     CONF_PRICE_ENTITY,
@@ -173,9 +171,7 @@ class PlannerCoordinator(DataUpdateCoordinator[Plan]):
 
         settings = Settings(
             efficiency_kwh_per_km=efficiency,
-            night_end_hour=int(conf[CONF_NIGHT_END_HOUR]),
-            day_start_hour=int(conf[CONF_DAY_START_HOUR]),
-            day_end_hour=int(conf[CONF_DAY_END_HOUR]),
+            default_departure_hour=int(conf[CONF_DEFAULT_DEPARTURE_HOUR]),
             horizon_days=int(conf[CONF_HORIZON_DAYS]),
             last_calibration=last_cal,
             forecast_mae=self._forecast_mae(),
@@ -191,12 +187,3 @@ class PlannerCoordinator(DataUpdateCoordinator[Plan]):
         )
         prices, known_until = self._prices(tz)
         return plan(now, soc, days, prices, settings, known_until=known_until)
-
-    @staticmethod
-    def window_datetimes(opp, tz) -> tuple[datetime, datetime] | None:
-        """Start/end datetimes of an opportunity (None if unknown)."""
-        if opp is None:
-            return None
-        start = datetime.combine(opp.day, datetime.min.time(), tzinfo=tz) + timedelta(hours=opp.start_hour)
-        end = datetime.combine(opp.day, datetime.min.time(), tzinfo=tz) + timedelta(hours=opp.end_hour)
-        return start, end

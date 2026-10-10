@@ -41,10 +41,12 @@ class Settings:
     floor_weekend: float = 40.0
     max_level: float = 90.0
     buffer_km: float = 100.0
-    night_end_hour: int = 8
-    day_start_hour: int = 8
-    day_end_hour: int = 17
+    charge_kw: float = 11.0  # charging power at the home charger
+    # Departure on a date without away hours (and return after an away night).
+    default_departure_hour: int = 8
     horizon_days: int = 7
+    # Longest period handed over to the charger integration at once.
+    handover_max_hours: int = 24
     calibration_soc: float = 100.0
     calibration_interval_days: float = 0.0  # 0 disables calibration
     calibration_early_days: float = 0.0
@@ -67,22 +69,23 @@ class Settings:
         """Buffer after the planned trips, in percent of the battery."""
         return self.buffer_km * self.pct_per_km()
 
+    def charge_pct_per_hour(self) -> float:
+        """Battery percentage gained per full hour of charging."""
+        if self.battery_kwh <= 0:
+            return 0.0
+        return self.charge_kw / self.battery_kwh * 100.0
+
 
 @dataclass
-class Opportunity:
-    """A period in which the car can charge (a night or a home day window)."""
+class ChargeHour:
+    """A planned charging hour."""
 
-    kind: str  # "night" | "day"
-    day: date
-    price: float | None  # cheapest hour in the window, None if unknown
-    best_hour: int | None
-    start_hour: int
-    end_hour: int
-    available: bool = True
-    # Unadjusted price of best_hour and the forecast factor it was divided by
-    # (1.0 for known prices). ``price`` is the adjusted price used for decisions.
-    raw_price: float | None = None
-    factor: float = 1.0
+    start: datetime
+    pct: float  # battery percentage charged in this hour
+    price: float | None  # adjusted price used for the decision
+    raw_price: float | None  # price as reported by the price source
+    known: bool  # True for a known (day-ahead) price, False for a forecast
+    calibration: bool = False
 
 
 @dataclass
@@ -93,11 +96,12 @@ class PlanRow:
     day_type: str  # weekday | weekend | holiday
     km: float
     floor: float
-    night: Opportunity | None
-    night_target: int | None  # set when the plan charges this night
-    day_window: Opportunity | None
-    day_target: int | None  # set when the plan charges in the day window
-    soc_departure: float  # expected SoC when leaving this date
+    departure_hour: int | None  # None when the car does not depart from home
+    requirement: float | None  # SoC needed at departure
+    charge_pct: float  # planned charging on this date (all hours)
+    charge_hours: list[ChargeHour]
+    soc_departure: float | None  # expected SoC at departure
+    forecast_factor: float = 1.0  # accuracy factor of this date's prices
     calibration: bool = False
     away_overnight: bool = False
     status: str = "not_needed"  # charge | covered | not_needed
@@ -105,9 +109,23 @@ class PlanRow:
 
 @dataclass
 class Plan:
-    """Planner result."""
+    """Planner result.
+
+    ``target_soc`` and ``charge_until`` are the hand-over to the charger
+    integration: charge to ``target_soc`` in the cheapest hours before
+    ``charge_until``. They only include hours with known prices before the next
+    departure; the rest of ``hours`` is the expected plan.
+    """
 
     target_soc: int
-    next_opportunity: Opportunity | None
-    next_charge: Opportunity | None
+    charge_until: datetime
+    charge_now: float  # percentage handed over
+    hours: list[ChargeHour]
     rows: list[PlanRow]
+    unmet: float = 0.0  # percentage that cannot be charged in time
+    calibration: bool = False
+
+    @property
+    def next_charge(self) -> ChargeHour | None:
+        """The first planned charging hour."""
+        return self.hours[0] if self.hours else None
