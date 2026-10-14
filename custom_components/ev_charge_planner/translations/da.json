@@ -32,6 +32,7 @@
         "data": {
           "notify_targets": "Send advarsler til – Home Assistant-notifikationer og/eller en telefon (tom: kun Problem-sensoren)",
           "notify_about": "Advarsler der sendes",
+          "alert_language": "Sprog i advarslerne",
           "calendar_entities": "Kalendere med dine ture – tom: brug tekst-hjælperne",
           "home_words": "Hjemme-ord (kommasepareret) – lokaliteter med et af dem regnes som hjemme",
           "ignore_words": "Ignorer-ord (kommasepareret) – aftaler med et af dem i lokalitet, titel eller beskrivelse køres ikke",
@@ -74,6 +75,13 @@
         "calendar": "Kalenderen kan ikke læses (1 t)",
         "routing": "Ture kan ikke ruteberegnes (1 t)",
         "charge_speed": "Ladehastighed utilgængelig (1 t)"
+      }
+    },
+    "alert_language": {
+      "options": {
+        "auto": "Home Assistants sprog",
+        "da": "Dansk",
+        "en": "Engelsk"
       }
     }
   },

@@ -236,3 +236,17 @@ def test_dst_change_hours_are_continuous():
     assert all((b - a).total_seconds() == 3600 for a, b in zip(starts, starts[1:], strict=False))
     assert [sl.start.hour for sl in slots if sl.start.date() == oct(25)].count(2) == 2
     assert sum(1 for sl in slots if sl.departs) == 2  # 25/10 and 26/10 at 08, once each
+
+
+def test_driving_home_after_midnight_is_not_a_departure():
+    """Away 19–24 on Saturday and 0–1 on Sunday (home 00:30): Sunday departs at 08, not 00."""
+    days = {
+        oct(10): DayInfo(oct(10), km=80, away_hours=[(19, 24)]),
+        oct(11): DayInfo(oct(11), km=0, away_hours=[(0, 1)]),
+    }
+    prices = make_prices(oct(10), 3, {})
+    slots = build_slots(at(10, 12), days, prices, prices, None, SETTINGS)
+    deps = [sl.start for sl in slots if sl.departs]
+    assert at(11, 0) not in deps and at(11, 8) in deps
+    # …and the car is still not home (cannot charge) until 01.
+    assert next(sl for sl in slots if sl.start == at(11, 0)).capacity == 0

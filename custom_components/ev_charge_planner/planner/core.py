@@ -84,16 +84,21 @@ def _end(start: int, end: int) -> int:
     return end if end > start else 24
 
 
-def departure_hour(info: DayInfo | None, s: Settings, after: int | None = None) -> int:
+def departure_hour(info: DayInfo | None, s: Settings, after: int | None = None, prev: DayInfo | None = None) -> int:
     """First hour the car leaves on a date: its first away hour, else the default.
 
     With ``after`` (today's current hour) only trips that start later count,
     so a later trip is still a departure once the first one has started.
+    With ``prev`` (the day before), away hours from midnight that continue a
+    trip of the evening before (e.g. driving home after midnight) are not a
+    departure.
     """
     if info is not None and info.away_hours:
-        starts = [start for start, _end in info.away_hours]
-        later = [h for h in starts if after is None or h > after]
-        return min(later or starts)
+        continues = prev is not None and any(end >= 24 for _start, end in prev.away_hours)
+        starts = [start for start, _end in info.away_hours if not (continues and start == 0)]
+        if starts:
+            later = [h for h in starts if after is None or h > after]
+            return min(later or starts)
     return s.default_departure_hour
 
 
@@ -189,7 +194,7 @@ def build_slots(
         cap = 0.0 if raw is None or not home else rate * (remaining if i == 0 else 1.0)
         slot = _Slot(start, adjusted.get((d, h)), raw, known_until is None or d <= known_until, cap)
         info = days.get(d)
-        dep = departure_hour(info, s, now.hour if d == now.date() else None)
+        dep = departure_hour(info, s, now.hour if d == now.date() else None, days.get(d - timedelta(days=1)))
         # A departure in the current hour has already happened unless it is exactly now.
         if h == dep and d not in departed and (i > 0 or now == t0):
             departed.add(d)

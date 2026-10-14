@@ -36,6 +36,9 @@ CONF_MIN_HOME_MINUTES = "min_home_minutes"
 CONF_WAZE_REGION = "waze_region"
 CONF_NOTIFY_TARGETS = "notify_targets"
 CONF_NOTIFY_ABOUT = "notify_about"
+CONF_ALERT_LANGUAGE = "alert_language"
+
+ALERT_LANGUAGES = ["auto", "da", "en"]
 
 WAZE_REGIONS = ["eu", "us", "na", "il", "au"]
 
@@ -49,6 +52,7 @@ DEFAULT_OPTIONS = {
     CONF_WAZE_REGION: "eu",
     CONF_NOTIFY_TARGETS: [],  # none: alerts only on the problem sensor
     CONF_NOTIFY_ABOUT: list(ALL_ALERTS),
+    CONF_ALERT_LANGUAGE: "auto",  # auto: Home Assistant's language
 }
 
 CALENDAR_REFRESH_MINUTES = 15
