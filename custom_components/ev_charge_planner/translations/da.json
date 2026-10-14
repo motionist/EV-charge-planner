@@ -30,6 +30,8 @@
       "init": {
         "title": "Ture, ladehastighed og afgang",
         "data": {
+          "notify_targets": "Send advarsler til – Home Assistant-notifikationer og/eller en telefon (tom: kun Problem-sensoren)",
+          "notify_about": "Advarsler der sendes",
           "calendar_entities": "Kalendere med dine ture – tom: brug tekst-hjælperne",
           "home_words": "Hjemme-ord (kommasepareret) – lokaliteter med et af dem regnes som hjemme",
           "ignore_words": "Ignorer-ord (kommasepareret) – aftaler med et af dem i lokalitet, titel eller beskrivelse køres ikke",
@@ -40,7 +42,7 @@
           "horizon_days": "Planlægningshorisont (dage)",
           "efficiency_fallback": "Effektivitet uden sensor (kWh/km)"
         },
-        "description": "Kalendere: aftaler med lokalitet er bilture (km og køretid fra Waze Travel Time). Lokaliteter med et hjemme-ord, eller inden for 1 km af hjemmet, regnes som hjemme; aftaler med et ignorer-ord i lokalitet, titel eller beskrivelse køres ikke. Mellem to aftaler kører bilen hjem, når der bliver mindst den angivne tid hjemme. Ladehastigheden fra enheden bruges i stedet for tallet Ladeeffekt, så længe den har en brugbar værdi."
+        "description": "Kalendere: aftaler med lokalitet er bilture (km og køretid fra Waze Travel Time). Lokaliteter med et hjemme-ord, eller inden for 1 km af hjemmet, regnes som hjemme; aftaler med et ignorer-ord i lokalitet, titel eller beskrivelse køres ikke. Mellem to aftaler kører bilen hjem, når der bliver mindst den angivne tid hjemme. Ladehastigheden fra enheden bruges i stedet for tallet Ladeeffekt, så længe den har en brugbar værdi. Advarsler: manglende information meldes først, når den varer ved (tid i parentes); der kommer en påmindelse hver 24. time og en kort besked, når det er i orden igen."
       }
     }
   },
@@ -60,9 +62,27 @@
         "il": "Israel",
         "au": "Australia"
       }
+    },
+    "notify_about": {
+      "options": {
+        "plug_in": "Sæt bilen til (ladning inden for 2 t, ikke sat til)",
+        "unmet": "Ikke tid nok til at lade før en afgang",
+        "soc": "Batteriniveau mangler (1 t)",
+        "prices_now": "Ingen kendt pris for den aktuelle time (1 t)",
+        "prices_tomorrow": "Morgendagens priser mangler efter kl. 15",
+        "prices_ahead": "Ingen kendte priser eller prognoser for de næste 3 dage (24 t)",
+        "calendar": "Kalenderen kan ikke læses (1 t)",
+        "routing": "Ture kan ikke ruteberegnes (1 t)",
+        "charge_speed": "Ladehastighed utilgængelig (1 t)"
+      }
     }
   },
   "entity": {
+    "binary_sensor": {
+      "problem": {
+        "name": "Problem"
+      }
+    },
     "sensor": {
       "target_soc": {
         "name": "Mål-SoC"

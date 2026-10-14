@@ -17,6 +17,7 @@ import pytest
 STUBBED = (
     "homeassistant",
     "homeassistant.components",
+    "homeassistant.components.binary_sensor",
     "homeassistant.components.number",
     "homeassistant.components.sensor",
     "homeassistant.config_entries",
@@ -38,8 +39,9 @@ BASE_CLASSES = {
     "homeassistant.helpers.update_coordinator": ("DataUpdateCoordinator", "CoordinatorEntity"),
     "homeassistant.components.sensor": ("SensorEntity",),
     "homeassistant.components.number": ("RestoreNumber",),
+    "homeassistant.components.binary_sensor": ("BinarySensorEntity",),
 }
-INTEGRATION_MODULES = ("__init__", "config_flow", "coordinator", "number", "sensor")
+INTEGRATION_MODULES = ("__init__", "binary_sensor", "config_flow", "coordinator", "number", "sensor")
 
 
 class _Stub:
