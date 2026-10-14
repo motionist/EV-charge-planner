@@ -22,17 +22,33 @@ CONF_HOLIDAY_CALENDAR = "holiday_calendar"
 CONF_LAST_CALIBRATION_ENTITY = "last_calibration_entity"
 CONF_LOCATION_ENTITY = "location_entity"
 CONF_CHARGE_SPEED_ENTITY = "charge_speed_entity"
+CONF_CALENDAR_ENTITIES = "calendar_entities"
 
 # Options
 CONF_DEFAULT_DEPARTURE_HOUR = "default_departure_hour"
 CONF_HORIZON_DAYS = "horizon_days"
 CONF_EFFICIENCY_FALLBACK = "efficiency_fallback"
+CONF_HOME_WORDS = "home_words"
+CONF_IGNORE_WORDS = "ignore_words"
+CONF_MIN_HOME_MINUTES = "min_home_minutes"
+CONF_WAZE_REGION = "waze_region"
+
+WAZE_REGIONS = ["eu", "us", "na", "il", "au"]
 
 DEFAULT_OPTIONS = {
     CONF_DEFAULT_DEPARTURE_HOUR: 8,
     CONF_HORIZON_DAYS: 7,
     CONF_EFFICIENCY_FALLBACK: 0.20,
+    CONF_HOME_WORDS: "",
+    CONF_IGNORE_WORDS: "teams, zoom, meet.google, webex, online, http://, https://, #ingenbil, #tog",
+    CONF_MIN_HOME_MINUTES: 60,
+    CONF_WAZE_REGION: "eu",
 }
+
+CALENDAR_REFRESH_MINUTES = 15
+LEG_CACHE_HOURS = 24  # routed legs are reused this long
+LEG_RETRY_MINUTES = 60  # a leg that could not be routed is retried after this
+MAX_NEW_LEGS_PER_UPDATE = 20
 
 UPDATE_INTERVAL_MINUTES = 5
 

@@ -1,8 +1,13 @@
 {
   "domain": "ev_charge_planner",
   "name": "EV Charge Planner",
-  "after_dependencies": ["calendar"],
-  "codeowners": ["@motionist"],
+  "after_dependencies": [
+    "calendar",
+    "waze_travel_time"
+  ],
+  "codeowners": [
+    "@motionist"
+  ],
   "config_flow": true,
   "dependencies": [],
   "documentation": "https://github.com/motionist/EV-charge-planner",

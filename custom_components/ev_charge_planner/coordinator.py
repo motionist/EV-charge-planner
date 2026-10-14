@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -13,12 +13,15 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 from homeassistant.util.location import distance
 
+from .adapters import calendar as cal_adapter
 from .adapters import prices as price_adapters
 from .adapters.charger import charge_kw as charge_kw_from_state
-from .adapters.trips import build_days
+from .adapters.trips import build_days, parse_dates
 from .const import (
+    CALENDAR_REFRESH_MINUTES,
     CONF_AWAY_HOURS_ENTITY,
     CONF_AWAY_NIGHTS_ENTITY,
+    CONF_CALENDAR_ENTITIES,
     CONF_CHARGE_SPEED_ENTITY,
     CONF_DEFAULT_DEPARTURE_HOUR,
     CONF_EFFICIENCY_ENTITY,
@@ -26,16 +29,23 @@ from .const import (
     CONF_FORECAST_ENTITY,
     CONF_FORECAST_MAE_ENTITIES,
     CONF_HOLIDAY_CALENDAR,
+    CONF_HOME_WORDS,
     CONF_HORIZON_DAYS,
+    CONF_IGNORE_WORDS,
     CONF_KM_ENTITY,
     CONF_LAST_CALIBRATION_ENTITY,
     CONF_LOCATION_ENTITY,
+    CONF_MIN_HOME_MINUTES,
     CONF_PLUGGED_ENTITY,
     CONF_PRICE_ADAPTER,
     CONF_PRICE_ENTITY,
     CONF_SOC_ENTITY,
+    CONF_WAZE_REGION,
     DEFAULT_OPTIONS,
     DOMAIN,
+    LEG_CACHE_HOURS,
+    LEG_RETRY_MINUTES,
+    MAX_NEW_LEGS_PER_UPDATE,
     PARAMS,
     UPDATE_INTERVAL_MINUTES,
 )
@@ -61,6 +71,15 @@ class PlannerCoordinator(DataUpdateCoordinator[Plan]):
         # Charging power used in the last update and where it came from.
         self.charge_kw: float | None = None
         self.charge_speed_source: str = "manual"
+        # Calendar trips: events (refreshed every CALENDAR_REFRESH_MINUTES), routed
+        # legs (cached), and the trips/status of the last update for the sensors.
+        self._events: list[cal_adapter.CalendarEvent] | None = None
+        self._events_at: datetime | None = None
+        self._legs: dict[tuple[str, str], tuple[cal_adapter.Leg | None, datetime]] = {}
+        self._waze_warned = False
+        self.trips: dict[date, cal_adapter.DayTrips] = {}
+        self.trip_source: str = "text helpers"
+        self.missing_legs: list[str] = []
 
     # ------------------------------------------------------------------ inputs
 
@@ -188,6 +207,95 @@ class PlannerCoordinator(DataUpdateCoordinator[Plan]):
             return manual, "manual (entity unavailable)"
         return kw, st.entity_id
 
+    # ------------------------------------------------------------- calendar
+
+    def _rules(self) -> cal_adapter.CalendarRules:
+        conf = self._conf
+        return cal_adapter.CalendarRules(
+            home_words=cal_adapter.split_words(conf.get(CONF_HOME_WORDS)),
+            ignore_words=cal_adapter.split_words(conf.get(CONF_IGNORE_WORDS)),
+            min_home_minutes=float(conf[CONF_MIN_HOME_MINUTES]),
+        )
+
+    async def _calendar_events(self, now: datetime, days: int) -> list[cal_adapter.CalendarEvent]:
+        """Events of the configured calendars, read again every CALENDAR_REFRESH_MINUTES."""
+        if self._events is not None and self._events_at and now - self._events_at < timedelta(minutes=CALENDAR_REFRESH_MINUTES):
+            return self._events
+        raw: list[dict] = []
+        for cal in self._conf.get(CONF_CALENDAR_ENTITIES) or []:
+            try:
+                resp = await self.hass.services.async_call(
+                    "calendar",
+                    "get_events",
+                    {"start_date_time": dt_util.start_of_local_day(), "duration": {"days": days + 1}},
+                    target={"entity_id": cal},
+                    blocking=True,
+                    return_response=True,
+                )
+            except Exception as err:  # noqa: BLE001 – keep the last events
+                _LOGGER.warning("Could not read calendar %s: %s", cal, err)
+                return self._events or []
+            raw.extend((resp or {}).get(cal, {}).get("events", []))
+        self._events = cal_adapter.parse_events(raw, now.tzinfo)
+        self._events_at = now
+        return self._events
+
+    def _place(self, location: str) -> str:
+        if location == cal_adapter.HOME:
+            return f"{self.hass.config.latitude},{self.hass.config.longitude}"
+        return location
+
+    async def _route(self, needed: set[tuple[str, str]], now: datetime) -> None:
+        """Route the legs that are not cached (Waze Travel Time), a limited number per update."""
+        todo = []
+        for key in sorted(needed):
+            cached = self._legs.get(key)
+            if cached is None:
+                todo.append(key)
+                continue
+            leg, at = cached
+            ttl = timedelta(hours=LEG_CACHE_HOURS) if leg is not None else timedelta(minutes=LEG_RETRY_MINUTES)
+            if now - at >= ttl:
+                todo.append(key)
+        if not todo:
+            return
+        if not self.hass.services.has_service("waze_travel_time", "get_travel_times"):
+            if not self._waze_warned:
+                _LOGGER.warning("Calendar trips need the Waze Travel Time integration to calculate km and travel time")
+                self._waze_warned = True
+            return
+        region = self._conf[CONF_WAZE_REGION]
+        for a, b in todo[:MAX_NEW_LEGS_PER_UPDATE]:
+            leg = None
+            try:
+                resp = await self.hass.services.async_call(
+                    "waze_travel_time",
+                    "get_travel_times",
+                    {"origin": self._place(a), "destination": self._place(b), "region": region, "units": "metric"},
+                    blocking=True,
+                    return_response=True,
+                )
+                routes = [r for r in (resp or {}).get("routes", []) if r.get("duration") is not None and r.get("distance") is not None]
+                if routes:
+                    best = min(routes, key=lambda r: float(r["duration"]))
+                    leg = cal_adapter.Leg(km=float(best["distance"]), minutes=float(best["duration"]))
+            except Exception as err:  # noqa: BLE001 – a leg that fails is retried later
+                _LOGGER.debug("Could not route %s → %s: %s", a, b, err)
+            self._legs[(a, b)] = (leg, now)
+
+    async def _calendar_days(self, now: datetime, days: int, holidays: set[date]):
+        events = await self._calendar_events(now, days)
+        rules = self._rules()
+        cars = cal_adapter.car_events(events, rules)
+        await self._route(cal_adapter.legs_needed(cars), now)
+        legs = {k: leg for k, (leg, _at) in self._legs.items() if leg is not None}
+        trips, missing = cal_adapter.plan_trips(cars, legs, rules)
+        self.trips = trips
+        self.trip_source = "calendar"
+        self.missing_legs = sorted(f"{a} → {b}".replace(cal_adapter.HOME, "home") for a, b in missing)
+        nights = parse_dates(self._text_state(CONF_AWAY_NIGHTS_ENTITY))
+        return cal_adapter.build_days(trips, nights, holidays)
+
     # ------------------------------------------------------------------ update
 
     async def _async_update_data(self) -> Plan:
@@ -217,12 +325,16 @@ class PlannerCoordinator(DataUpdateCoordinator[Plan]):
         )
 
         holidays = await self._holidays(now.date(), settings.horizon_days)
-        days = build_days(
-            self._text_state(CONF_KM_ENTITY),
-            self._text_state(CONF_AWAY_HOURS_ENTITY),
-            self._text_state(CONF_AWAY_NIGHTS_ENTITY),
-            holidays,
-        )
+        if conf.get(CONF_CALENDAR_ENTITIES):
+            days = await self._calendar_days(now, settings.horizon_days, holidays)
+        else:
+            self.trips, self.trip_source, self.missing_legs = {}, "text helpers", []
+            days = build_days(
+                self._text_state(CONF_KM_ENTITY),
+                self._text_state(CONF_AWAY_HOURS_ENTITY),
+                self._text_state(CONF_AWAY_NIGHTS_ENTITY),
+                holidays,
+            )
         prices, known_until = self._prices(tz)
         car_home, distance_km = self._location()
         return plan(

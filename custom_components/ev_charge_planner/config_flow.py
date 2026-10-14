@@ -13,6 +13,7 @@ from .adapters.prices import ADAPTER_ENERGI_DATA_SERVICE, ADAPTER_GENERIC, ADAPT
 from .const import (
     CONF_AWAY_HOURS_ENTITY,
     CONF_AWAY_NIGHTS_ENTITY,
+    CONF_CALENDAR_ENTITIES,
     CONF_CHARGE_SPEED_ENTITY,
     CONF_DEFAULT_DEPARTURE_HOUR,
     CONF_EFFICIENCY_ENTITY,
@@ -20,16 +21,21 @@ from .const import (
     CONF_FORECAST_ENTITY,
     CONF_FORECAST_MAE_ENTITIES,
     CONF_HOLIDAY_CALENDAR,
+    CONF_HOME_WORDS,
     CONF_HORIZON_DAYS,
+    CONF_IGNORE_WORDS,
     CONF_KM_ENTITY,
     CONF_LAST_CALIBRATION_ENTITY,
     CONF_LOCATION_ENTITY,
+    CONF_MIN_HOME_MINUTES,
     CONF_PLUGGED_ENTITY,
     CONF_PRICE_ADAPTER,
     CONF_PRICE_ENTITY,
     CONF_SOC_ENTITY,
+    CONF_WAZE_REGION,
     DEFAULT_OPTIONS,
     DOMAIN,
+    WAZE_REGIONS,
 )
 
 TEXT_DOMAINS = ["input_text", "text", "sensor"]
@@ -60,6 +66,7 @@ USER_SCHEMA = vol.Schema(
             selector.EntitySelectorConfig(domain="sensor", multiple=True)
         ),
         vol.Optional(CONF_EFFICIENCY_ENTITY): _entity("sensor"),
+        vol.Optional(CONF_CALENDAR_ENTITIES): _calendars(),
         vol.Optional(CONF_KM_ENTITY): _entity(TEXT_DOMAINS),
         vol.Optional(CONF_AWAY_HOURS_ENTITY): _entity(TEXT_DOMAINS),
         vol.Optional(CONF_AWAY_NIGHTS_ENTITY): _entity(TEXT_DOMAINS),
@@ -67,6 +74,10 @@ USER_SCHEMA = vol.Schema(
         vol.Optional(CONF_LAST_CALIBRATION_ENTITY): _entity(["input_datetime", "sensor"]),
     }
 )
+
+
+def _calendars() -> selector.EntitySelector:
+    return selector.EntitySelector(selector.EntitySelectorConfig(domain="calendar", multiple=True))
 
 
 def _hour() -> selector.NumberSelector:
@@ -91,17 +102,30 @@ class EvChargePlannerConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class EvChargePlannerOptionsFlow(OptionsFlow):
-    """Default departure hour, horizon, efficiency fallback and charging speed entity."""
+    """Calendar trips, charging speed entity, default departure hour, horizon and efficiency fallback."""
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         if user_input is not None:
-            # An emptied entity field means: use the charging power parameter.
+            # Emptied fields: no calendars (text helpers are used), charging power parameter.
+            user_input.setdefault(CONF_CALENDAR_ENTITIES, [])
             user_input.setdefault(CONF_CHARGE_SPEED_ENTITY, None)
+            user_input.setdefault(CONF_HOME_WORDS, "")
+            user_input.setdefault(CONF_IGNORE_WORDS, "")
             return self.async_create_entry(data=user_input)
         cur = {**DEFAULT_OPTIONS, **self.config_entry.data, **self.config_entry.options}
         speed = cur.get(CONF_CHARGE_SPEED_ENTITY)
+        calendars = cur.get(CONF_CALENDAR_ENTITIES) or []
         schema = vol.Schema(
             {
+                vol.Optional(CONF_CALENDAR_ENTITIES, description={"suggested_value": calendars}): _calendars(),
+                vol.Optional(CONF_HOME_WORDS, description={"suggested_value": cur[CONF_HOME_WORDS]}): selector.TextSelector(),
+                vol.Optional(CONF_IGNORE_WORDS, description={"suggested_value": cur[CONF_IGNORE_WORDS]}): selector.TextSelector(),
+                vol.Required(CONF_MIN_HOME_MINUTES, default=cur[CONF_MIN_HOME_MINUTES]): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=0, max=240, step=5, unit_of_measurement="min", mode=selector.NumberSelectorMode.BOX)
+                ),
+                vol.Required(CONF_WAZE_REGION, default=cur[CONF_WAZE_REGION]): selector.SelectSelector(
+                    selector.SelectSelectorConfig(options=WAZE_REGIONS, translation_key=CONF_WAZE_REGION)
+                ),
                 vol.Optional(
                     CONF_CHARGE_SPEED_ENTITY, description={"suggested_value": speed} if speed else None
                 ): _entity(CHARGE_SPEED_DOMAINS),

@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "EV Charge Planner",
-        "description": "Choose the entities the planner reads. Trips (km per day, away hours, away nights) use the text formats described in the README in v0.1.",
+        "description": "Choose the entities the planner reads. Trips come from calendars (events with a location, routed with Waze Travel Time) or, if no calendar is chosen, from the text helpers described in the README.",
         "data": {
           "name": "Name",
           "soc_entity": "Battery level (SoC) sensor",
@@ -15,6 +15,7 @@
           "forecast_entity": "Price forecast sensor, e.g. Open Spot Forecast (optional)",
           "forecast_mae_entities": "Forecast error (MAE) sensors for lead day 1, 2, 3, 4 – in that order, e.g. Open Spot Forecast's forecast_mae_day_1…4 (optional)",
           "efficiency_entity": "Efficiency sensor in kWh/km (optional)",
+          "calendar_entities": "Calendars with your trips (optional) – events with a location become car trips; km and travel time via Waze Travel Time",
           "km_entity": "Km per day text helper (optional)",
           "away_hours_entity": "Away hours text helper (optional)",
           "away_nights_entity": "Away nights text helper (optional)",
@@ -27,14 +28,19 @@
   "options": {
     "step": {
       "init": {
-        "title": "Departure, horizon and charging speed",
+        "title": "Trips, charging speed and departure",
         "data": {
+          "calendar_entities": "Calendars with your trips – empty: use the text helpers",
+          "home_words": "Home words (comma separated) – locations containing one of them are home",
+          "ignore_words": "Ignore words (comma separated) – events with one of them in location, title or description are not driven",
+          "min_home_minutes": "Minimum time at home between two events to drive home",
+          "waze_region": "Waze region",
           "charge_speed_entity": "Charging speed entity (%/h, kW or W) – leave empty to use the Charging power number",
           "default_departure_hour": "Departure on days without away hours (hour)",
           "horizon_days": "Planning horizon (days)",
           "efficiency_fallback": "Efficiency if no sensor (kWh/km)"
         },
-        "description": "The charging speed entity overrides the Charging power number while it has a usable value; when it is unavailable the number is used."
+        "description": "Calendars: events with a location are car trips (km and travel time from Waze Travel Time). Locations containing a home word, or within 1 km of home, are home; events whose location, title or description contains an ignore word are not driven. Between two events the car goes home when that leaves at least the given time at home. The charging speed entity overrides the Charging power number while it has a usable value."
       }
     }
   },
@@ -44,6 +50,15 @@
         "energi_data_service": "Energi Data Service",
         "nordpool": "Nord Pool (custom integration)",
         "generic": "Generic (list attribute with time and price)"
+      }
+    },
+    "waze_region": {
+      "options": {
+        "eu": "Europe",
+        "us": "USA",
+        "na": "North America",
+        "il": "Israel",
+        "au": "Australia"
       }
     }
   },
