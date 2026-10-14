@@ -144,6 +144,12 @@ Data Service's forecast is typically 0.3–1 kr/kWh lower at night and up to
    the hours both cover; an hour of day without overlap uses the overall
    mean, and without any overlap the offset is 0.
 2. Each fallback hour after the forecast: `price = fallback + offset[h]`.
+3. While the forecast is missing (e.g. not loaded yet right after a
+   restart, or the forecast service is down), the offsets of the last
+   update are used. Without any (the first update after a restart), the
+   fallback hours are left without a price when a forecast is configured:
+   its raw prices can be far too low, and a plan on them would charge at
+   the wrong time.
 
 It is also more uncertain than the forecast's last lead day, increasingly
 so further out. Every fallback hour is therefore *always* adjusted (also

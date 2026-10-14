@@ -12,6 +12,7 @@ from ev_charge_planner.planner import (
     adjust_prices,
     calibrate_fallback,
     fallback_factors,
+    fallback_offsets,
     forecast_factors,
     merge_prices,
     plan,
@@ -181,6 +182,17 @@ def test_fallback_is_calibrated_per_hour_of_day():
     assert out[(12, 3)].source == "fallback"
     merged = merge_prices(calibrate_fallback(fallback, forecast, tz=TZ), forecast, tz=TZ)
     assert merged[(oct(10), 3)] == 1.5 and merged[(oct(12), 3)] == pytest.approx(1.3)
+
+
+def test_fallback_offsets_are_kept_for_later():
+    """The offsets of one update calibrate a later fallback when the forecast is missing (e.g. after a restart)."""
+    forecast = [hp(10, 3, 1.5, "forecast"), hp(10, 18, 4.0, "forecast")]
+    offsets = fallback_offsets([hp(10, 3, 1.0, "fallback"), hp(10, 18, 2.0, "fallback")], forecast, tz=TZ)
+    assert offsets[3] == pytest.approx(0.5) and offsets[18] == pytest.approx(2.0)
+    assert offsets[12] == pytest.approx(1.25)  # overall mean
+    assert fallback_offsets([hp(12, 3, 0.9, "fallback")], [], tz=TZ) is None
+    out = calibrate_fallback([hp(12, 3, 0.9, "fallback"), hp(12, 18, 2.1, "fallback")], [], tz=TZ, offsets=offsets)
+    assert [round(p.price, 3) for p in out] == [1.4, 4.1]
 
 
 def test_fallback_without_overlap_is_unchanged():

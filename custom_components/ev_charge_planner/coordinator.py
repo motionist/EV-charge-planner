@@ -53,7 +53,7 @@ from .const import (
     PARAMS,
     UPDATE_INTERVAL_MINUTES,
 )
-from .planner import Plan, Settings, calibrate_fallback, merge_prices, plan
+from .planner import Plan, Settings, calibrate_fallback, fallback_offsets, merge_prices, plan
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -87,6 +87,7 @@ class PlannerCoordinator(DataUpdateCoordinator[Plan]):
         self._calendar_error = False
         self._known_hours: set[tuple[date, int]] = set()
         self._fallback_hours: set[tuple[date, int]] = set()
+        self._fallback_offsets: dict[int, float] | None = None
         # Issues of the last update (problem sensor) and the notifications sent.
         self.alerts = alerts.AlertTracker()
 
@@ -185,8 +186,19 @@ class PlannerCoordinator(DataUpdateCoordinator[Plan]):
             known = price_adapters.from_list(attrs.get("prices") or attrs.get("raw_today") or [], tz, "known")
         fst = self._state(CONF_FORECAST_ENTITY)
         forecast = price_adapters.open_spot_forecast(dict(fst.attributes), tz) if fst else []
-        # The fallback forecast only fills the hours after the forecast, at its level.
-        fallback = calibrate_fallback(fallback, forecast, tz=tz)
+        # The fallback forecast only fills the hours after the forecast, at its
+        # level. While the forecast is missing (e.g. not loaded yet right after
+        # a restart) the last offsets are used; without any, the fallback is
+        # left out when a forecast is configured – its raw prices can be far
+        # too low, and a plan on them would charge at the wrong time.
+        offsets = fallback_offsets(fallback, forecast, tz)
+        if offsets is not None:
+            self._fallback_offsets = offsets
+        offsets = offsets or self._fallback_offsets
+        if offsets is None and self._conf.get(CONF_FORECAST_ENTITY):
+            fallback = []
+        else:
+            fallback = calibrate_fallback(fallback, forecast, tz=tz, offsets=offsets)
         known_until = max((hp.start.astimezone(tz).date() for hp in known), default=None)
         self._known_hours = {(s.date(), s.hour) for s in (hp.start.astimezone(tz) for hp in known)}
         self._fallback_hours = {(s.date(), s.hour) for s in (hp.start.astimezone(tz) for hp in fallback)} - self._known_hours

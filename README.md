@@ -49,7 +49,7 @@ the trips plus a safety buffer, bought at the cheapest hours.
 |---|---|
 | `sensor.<name>_target_soc` | Target SoC to hand over – charge to this level before *charge until*. Feed it to EV Smart Charging, your charger integration or an automation. |
 | `sensor.<name>_charge_until` | End of the hand-over (next departure or last known price hour) – e.g. EV Smart Charging's completion time. |
-| `sensor.<name>_next_charge_start` | The first planned charging hour (known or forecast). |
+| `sensor.<name>_next_charging_hour` | The first planned charging hour (known or forecast). |
 | `sensor.<name>_plan` | The full plan: `hours` (every planned hour with %, kWh, price and known/forecast), `rows` (one per date) and `totals` (kWh and cost for known and forecast prices) for your own dashboard – see [docs/example-card.md](docs/example-card.md). |
 | `number.<name>_*` | Parameters: floors, max level, high cap before long trips (level, km, price advantage), buffer (km), battery capacity, charging power, calibration settings, forecast min. accuracy and far factor. |
 
@@ -93,12 +93,34 @@ missing. In the options you can send these alerts to Home Assistant
 notifications and/or your phone (companion app) and pick which ones. See
 [DESIGN.md §5.6](docs/DESIGN.md).
 
-## Installation (development)
+Entity IDs follow the language Home Assistant had when the integration was
+added (Danish: `_mal_soc`, `_naeste_ladetime`, `_lad_faerdig_senest`,
+`_ladeplan`).
+
+## Installation (beta)
 
 1. HACS → ⋮ → Custom repositories → add
    `https://github.com/motionist/EV-charge-planner` as *Integration*.
 2. Install **EV Charge Planner**, restart Home Assistant.
 3. Settings → Devices & services → Add integration → EV Charge Planner.
+
+Tested on Home Assistant 2026.10. This is a beta: run it in **shadow mode**
+first (let it plan while your current setup controls the charger), then
+hand the plan over – see [docs/ev-smart-charging.md](docs/ev-smart-charging.md).
+
+## Testing and feedback
+
+Report anything odd as a [GitHub issue](https://github.com/motionist/EV-charge-planner/issues/new/choose)
+with the plan sensor's `rows` and `hours` attributes. The `trips`
+attribute contains your calendar locations – remove them before posting.
+
+Known limitations (v0.1):
+
+* One car per config entry (add the integration once per car).
+* Charging losses are not included in kWh and cost.
+* Open Spot Forecast only covers Denmark (DK1/DK2).
+* Travel times come from Waze and can differ from your own experience –
+  check the `trips` attribute.
 
 ## Development
 
