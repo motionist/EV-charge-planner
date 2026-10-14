@@ -5,7 +5,8 @@ See docs/DESIGN.md §4–5. Pure Python, no Home Assistant imports.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections import defaultdict
+from collections.abc import Collection, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 
@@ -31,7 +32,43 @@ def merge_prices(*layers: Iterable[HourPrice], tz=None) -> HourMap:
     return out
 
 
+def calibrate_fallback(fallback: Iterable[HourPrice], forecast: Iterable[HourPrice], tz=None) -> list[HourPrice]:
+    """Fallback forecast hours the forecast does not cover, at the forecast's level (DESIGN §5.0).
+
+    A fallback forecast (e.g. Energi Data Service's) can be on another level
+    than the forecast – e.g. without the evening peak tariff. Every fallback
+    hour the forecast does not cover gets the mean difference (forecast −
+    fallback) of the same hour of day in the hours both cover; an hour of day
+    without overlap gets the overall mean difference. Without any overlap the
+    fallback hours are returned unchanged. Hours the forecast covers are
+    left out (the forecast wins there anyway).
+    """
+
+    def local(hp: HourPrice) -> datetime:
+        return hp.start.astimezone(tz) if (tz is not None and hp.start.tzinfo) else hp.start
+
+    covered = {(t.date(), t.hour): hp.price for hp in forecast for t in [local(hp)]}
+    diffs: dict[int, list[float]] = defaultdict(list)
+    rest: list[tuple[HourPrice, int]] = []
+    for hp in fallback:
+        t = local(hp)
+        if (t.date(), t.hour) in covered:
+            diffs[t.hour].append(covered[(t.date(), t.hour)] - hp.price)
+        else:
+            rest.append((hp, t.hour))
+    if not diffs:
+        return [hp for hp, _h in rest]
+    every = [d for v in diffs.values() for d in v]
+    overall = sum(every) / len(every)
+    return [HourPrice(hp.start, hp.price + (sum(diffs[h]) / len(diffs[h]) if h in diffs else overall), hp.source) for hp, h in rest]
+
+
 MIN_FORECAST_FACTOR = 0.3
+
+
+def _known_mean(prices: HourMap, known_until: date) -> float:
+    known = [p for (d, _h), p in prices.items() if d <= known_until]
+    return sum(known) / len(known) if known else 0.0
 
 
 def forecast_factors(prices: HourMap, known_until: date | None, s: Settings) -> dict[date, float]:
@@ -43,8 +80,7 @@ def forecast_factors(prices: HourMap, known_until: date | None, s: Settings) -> 
     """
     if known_until is None or not s.forecast_mae:
         return {}
-    known = [p for (d, _h), p in prices.items() if d <= known_until]
-    mean = sum(known) / len(known) if known else 0.0
+    mean = _known_mean(prices, known_until)
     if mean <= 0:
         return {}
     n = len(s.forecast_mae)
@@ -58,11 +94,50 @@ def forecast_factors(prices: HourMap, known_until: date | None, s: Settings) -> 
     return out
 
 
-def adjust_prices(prices: HourMap, factors: Mapping[date, float]) -> HourMap:
-    """Divide forecast prices by their date's factor (negative prices are multiplied)."""
+def fallback_factors(
+    prices: HourMap,
+    fallback_hours: Collection[tuple[date, int]],
+    known_until: date | None,
+    s: Settings,
+) -> dict[tuple[date, int], float]:
+    """Accuracy factor of every fallback forecast hour (DESIGN §5.0).
+
+    The fallback forecast is used after the forecast ends, so it is taken to
+    be less accurate than the forecast's last lead day, and more so the
+    further out: ``mae = mae_day[last] × forecast_far_factor ** max(lead −
+    last + 1, 1)``, ``accuracy = 1 − mae ÷ mean known price``. Unlike the
+    forecast, it is always applied (whatever ``forecast_min_accuracy``),
+    with the same floor.
+    """
+    if known_until is None or not s.forecast_mae or not fallback_hours:
+        return {}
+    mean = _known_mean(prices, known_until)
+    if mean <= 0:
+        return {}
+    n = len(s.forecast_mae)
+    out: dict[tuple[date, int], float] = {}
+    for d, h in fallback_hours:
+        if d <= known_until or (d, h) not in prices:
+            continue
+        lead = (d - known_until).days
+        mae = s.forecast_mae[-1] * s.forecast_far_factor ** max(lead - n + 1, 1)
+        out[(d, h)] = max(1 - mae / mean, MIN_FORECAST_FACTOR)
+    return out
+
+
+def adjust_prices(
+    prices: HourMap,
+    factors: Mapping[date, float],
+    hour_factors: Mapping[tuple[date, int], float] | None = None,
+) -> HourMap:
+    """Divide forecast prices by their factor (negative prices are multiplied).
+
+    ``hour_factors`` (fallback forecast hours) take precedence over the
+    date's factor.
+    """
     out: HourMap = {}
     for (d, h), p in prices.items():
-        f = factors.get(d)
+        f = (hour_factors or {}).get((d, h), factors.get(d))
         out[(d, h)] = p if f is None else (p / f if p > 0 else p * f)
     return out
 
@@ -366,6 +441,7 @@ def plan(
     known_until: date | None = None,
     car_home: bool | None = None,
     distance_km: float | None = None,
+    fallback_hours: Collection[tuple[date, int]] = (),
 ) -> Plan:
     """Plan charging hour by hour over the horizon (DESIGN §5).
 
@@ -377,11 +453,15 @@ def plan(
     ``car_home`` and ``distance_km`` (straight line from home) describe where
     the car is now; away from home, the rest of today's driving is taken from
     the SoC before planning (§5.4).
+
+    ``fallback_hours`` are the (date, hour) keys whose price comes from the
+    fallback forecast; they get their own, larger uncertainty (§5.0).
     """
     rest_km = remaining_km(now, days, car_home, distance_km)
     soc = soc - rest_km * s.pct_per_km()
     factors = forecast_factors(prices, known_until, s)
-    slots = build_slots(now, days, prices, adjust_prices(prices, factors), known_until, s)
+    hour_factors = fallback_factors(prices, fallback_hours, known_until, s)
+    slots = build_slots(now, days, prices, adjust_prices(prices, factors, hour_factors), known_until, s)
     q = [0.0] * len(slots)
 
     until = handover_end(slots, s)

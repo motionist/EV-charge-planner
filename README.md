@@ -30,8 +30,10 @@ the trips plus a safety buffer, bought at the cheapest hours.
   SoC while the car is out, so tomorrow's plan does not count on energy that
   will be used on the way back.
 * Optional periodic **battery calibration** charge in a cheap hour.
-* Uses known prices first, then a price forecast (e.g. Open Spot Forecast),
-  then a fallback forecast (e.g. Energi Data Service).
+* Uses known prices first, then a price forecast (e.g. Open Spot Forecast)
+  as far as it reaches, then a fallback forecast (e.g. Energi Data Service)
+  – calibrated per hour of day to the forecast's level and weighed by its
+  larger uncertainty.
 * Weighs a **known price higher than a forecast**: when a forecast day's
   accuracy (from the forecast's own error statistics) is below 90 %, its
   prices are divided by the accuracy before they are compared – so a known 0.74 today beats a 0.65 forecast for
