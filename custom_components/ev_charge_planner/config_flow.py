@@ -47,6 +47,10 @@ def _entity(domain: str | list[str]) -> selector.EntitySelector:
     return selector.EntitySelector(selector.EntitySelectorConfig(domain=domain))
 
 
+def _calendars() -> selector.EntitySelector:
+    return selector.EntitySelector(selector.EntitySelectorConfig(domain="calendar", multiple=True))
+
+
 USER_SCHEMA = vol.Schema(
     {
         vol.Required("name", default="EV Charge Planner"): str,
@@ -74,10 +78,6 @@ USER_SCHEMA = vol.Schema(
         vol.Optional(CONF_LAST_CALIBRATION_ENTITY): _entity(["input_datetime", "sensor"]),
     }
 )
-
-
-def _calendars() -> selector.EntitySelector:
-    return selector.EntitySelector(selector.EntitySelectorConfig(domain="calendar", multiple=True))
 
 
 def _hour() -> selector.NumberSelector:
