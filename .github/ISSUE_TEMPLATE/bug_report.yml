@@ -1,0 +1,64 @@
+name: Bug report / test feedback
+description: Something in the plan looks wrong, or the integration fails.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing!
+
+        **Privacy:** the plan sensor's `trips` attribute and the alerts contain
+        the locations of your calendar events. Remove addresses (and anything
+        else personal) before you paste attributes or screenshots here – this
+        repository is public.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+      description: E.g. "it plans to charge Friday 01 although Sunday is cheaper".
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: Home Assistant version and EV Charge Planner version (HACS).
+      placeholder: "HA 2026.10.1, EV Charge Planner 0.1.0b1"
+    validations:
+      required: true
+  - type: dropdown
+    id: prices
+    attributes:
+      label: Price source
+      options:
+        - Energi Data Service
+        - Energi Data Service + Open Spot Forecast
+        - Nord Pool
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: trips
+    attributes:
+      label: Trips from
+      options:
+        - Calendar (Waze Travel Time)
+        - Text helpers
+        - None
+    validations:
+      required: true
+  - type: textarea
+    id: plan
+    attributes:
+      label: Plan
+      description: |
+        Developer tools → States → `sensor.<name>_plan` (Danish: `_ladeplan`):
+        the `rows` and `hours` attributes, plus the Problem sensor's `issues`.
+        Remove addresses from `trips` first.
+      render: yaml
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log
+      description: Settings → System → Logs, entries mentioning `ev_charge_planner`.
+      render: text

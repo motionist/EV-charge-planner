@@ -32,35 +32,56 @@ def merge_prices(*layers: Iterable[HourPrice], tz=None) -> HourMap:
     return out
 
 
-def calibrate_fallback(fallback: Iterable[HourPrice], forecast: Iterable[HourPrice], tz=None) -> list[HourPrice]:
+def _local(hp: HourPrice, tz) -> datetime:
+    return hp.start.astimezone(tz) if (tz is not None and hp.start.tzinfo) else hp.start
+
+
+def fallback_offsets(fallback: Iterable[HourPrice], forecast: Iterable[HourPrice], tz=None) -> dict[int, float] | None:
+    """Per hour of day, how much the forecast lies above the fallback forecast (DESIGN §5.0).
+
+    The mean difference (forecast − fallback) of each hour of day in the
+    hours both cover; an hour of day without overlap gets the overall mean
+    difference. ``None`` when they do not overlap at all.
+    """
+    covered = {(t.date(), t.hour): hp.price for hp in forecast for t in [_local(hp, tz)]}
+    diffs: dict[int, list[float]] = defaultdict(list)
+    for hp in fallback:
+        t = _local(hp, tz)
+        if (t.date(), t.hour) in covered:
+            diffs[t.hour].append(covered[(t.date(), t.hour)] - hp.price)
+    if not diffs:
+        return None
+    every = [d for v in diffs.values() for d in v]
+    overall = sum(every) / len(every)
+    return {h: (sum(diffs[h]) / len(diffs[h]) if h in diffs else overall) for h in range(24)}
+
+
+def calibrate_fallback(
+    fallback: Iterable[HourPrice],
+    forecast: Iterable[HourPrice],
+    tz=None,
+    offsets: Mapping[int, float] | None = None,
+) -> list[HourPrice]:
     """Fallback forecast hours the forecast does not cover, at the forecast's level (DESIGN §5.0).
 
     A fallback forecast (e.g. Energi Data Service's) can be on another level
     than the forecast – e.g. without the evening peak tariff. Every fallback
-    hour the forecast does not cover gets the mean difference (forecast −
-    fallback) of the same hour of day in the hours both cover; an hour of day
-    without overlap gets the overall mean difference. Without any overlap the
+    hour the forecast does not cover gets the ``offsets`` of its hour of
+    day (default: ``fallback_offsets`` of the two). Without offsets the
     fallback hours are returned unchanged. Hours the forecast covers are
     left out (the forecast wins there anyway).
     """
-
-    def local(hp: HourPrice) -> datetime:
-        return hp.start.astimezone(tz) if (tz is not None and hp.start.tzinfo) else hp.start
-
-    covered = {(t.date(), t.hour): hp.price for hp in forecast for t in [local(hp)]}
-    diffs: dict[int, list[float]] = defaultdict(list)
-    rest: list[tuple[HourPrice, int]] = []
+    fallback, forecast = list(fallback), list(forecast)
+    if offsets is None:
+        offsets = fallback_offsets(fallback, forecast, tz)
+    covered = {(t.date(), t.hour) for t in (_local(hp, tz) for hp in forecast)}
+    out = []
     for hp in fallback:
-        t = local(hp)
+        t = _local(hp, tz)
         if (t.date(), t.hour) in covered:
-            diffs[t.hour].append(covered[(t.date(), t.hour)] - hp.price)
-        else:
-            rest.append((hp, t.hour))
-    if not diffs:
-        return [hp for hp, _h in rest]
-    every = [d for v in diffs.values() for d in v]
-    overall = sum(every) / len(every)
-    return [HourPrice(hp.start, hp.price + (sum(diffs[h]) / len(diffs[h]) if h in diffs else overall), hp.source) for hp, h in rest]
+            continue
+        out.append(HourPrice(hp.start, hp.price + offsets.get(t.hour, 0.0), hp.source) if offsets else hp)
+    return out
 
 
 MIN_FORECAST_FACTOR = 0.3
