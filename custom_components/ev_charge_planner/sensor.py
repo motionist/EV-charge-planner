@@ -84,6 +84,8 @@ class TargetSocSensor(_Base):
             "unmet": p.unmet,
             "remaining_km": p.remaining_km,
             "soc_home": p.soc_home,
+            "charge_kw": round(self.coordinator.charge_kw, 2) if self.coordinator.charge_kw else None,
+            "charge_speed_source": self.coordinator.charge_speed_source,
         }
 
 

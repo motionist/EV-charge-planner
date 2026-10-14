@@ -57,6 +57,10 @@ Selected in the config flow:
 
 * Battery level (SoC) sensor, optional plugged-in/home binary sensor,
   optional car location (device tracker).
+* Charging speed: set the *Charging power* number manually, or pick an
+  entity in the config/options flow – e.g. EV Smart Charging's charging
+  speed (%/h) or a charger power sensor (kW/W). The number is the fallback
+  while the entity is unavailable.
 * Price sensor: **Energi Data Service** (known prices + its forecast),
   **Nord Pool** (custom integration) or a generic list attribute.
 * Optional price forecast sensor (**Open Spot Forecast**) and its error

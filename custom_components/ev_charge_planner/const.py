@@ -21,6 +21,7 @@ CONF_AWAY_NIGHTS_ENTITY = "away_nights_entity"
 CONF_HOLIDAY_CALENDAR = "holiday_calendar"
 CONF_LAST_CALIBRATION_ENTITY = "last_calibration_entity"
 CONF_LOCATION_ENTITY = "location_entity"
+CONF_CHARGE_SPEED_ENTITY = "charge_speed_entity"
 
 # Options
 CONF_DEFAULT_DEPARTURE_HOUR = "default_departure_hour"

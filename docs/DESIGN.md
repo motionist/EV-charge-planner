@@ -63,6 +63,7 @@ Non-goals:
 | Public holidays | `workday` binary sensor or holiday calendar | optional |
 | Efficiency | sensor (kWh/km) or fixed number | |
 | Battery capacity | number (kWh) | |
+| Charging speed | entity (optional), else the `charge_kw` number | e.g. EV Smart Charging's charging speed in %/h (converted with the battery capacity), or a charger power in kW/W. While the entity has no usable value, the number is used. |
 | Parameters | `number` entities owned by the integration | see §6 |
 
 ## 4. Hourly slots
@@ -239,7 +240,7 @@ shown in the plan.
 | Price advantage for the high cap (`long_trip_advantage_pct`) | 30 | % |
 | Buffer after trips | 100 | km |
 | Battery capacity | 75 | kWh |
-| Charging power (`charge_kw`) | 11 | kW |
+| Charging power (`charge_kw`) – used when no charging speed entity is set or it is unavailable | 11 | kW |
 | Calibration SoC | 100 | % |
 | Calibration interval | 0 (off) | days |
 | Calibration early grab | 0 | days |

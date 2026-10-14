@@ -13,6 +13,7 @@ from .adapters.prices import ADAPTER_ENERGI_DATA_SERVICE, ADAPTER_GENERIC, ADAPT
 from .const import (
     CONF_AWAY_HOURS_ENTITY,
     CONF_AWAY_NIGHTS_ENTITY,
+    CONF_CHARGE_SPEED_ENTITY,
     CONF_DEFAULT_DEPARTURE_HOUR,
     CONF_EFFICIENCY_ENTITY,
     CONF_EFFICIENCY_FALLBACK,
@@ -32,6 +33,8 @@ from .const import (
 )
 
 TEXT_DOMAINS = ["input_text", "text", "sensor"]
+# Charging speed in %/h (e.g. EV Smart Charging's charging speed), kW or W.
+CHARGE_SPEED_DOMAINS = ["number", "input_number", "sensor"]
 
 
 def _entity(domain: str | list[str]) -> selector.EntitySelector:
@@ -44,6 +47,7 @@ USER_SCHEMA = vol.Schema(
         vol.Required(CONF_SOC_ENTITY): _entity("sensor"),
         vol.Optional(CONF_PLUGGED_ENTITY): _entity("binary_sensor"),
         vol.Optional(CONF_LOCATION_ENTITY): _entity("device_tracker"),
+        vol.Optional(CONF_CHARGE_SPEED_ENTITY): _entity(CHARGE_SPEED_DOMAINS),
         vol.Required(CONF_PRICE_ADAPTER, default=ADAPTER_ENERGI_DATA_SERVICE): selector.SelectSelector(
             selector.SelectSelectorConfig(
                 options=[ADAPTER_ENERGI_DATA_SERVICE, ADAPTER_NORDPOOL, ADAPTER_GENERIC],
@@ -87,14 +91,20 @@ class EvChargePlannerConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class EvChargePlannerOptionsFlow(OptionsFlow):
-    """Default departure hour, horizon and efficiency fallback."""
+    """Default departure hour, horizon, efficiency fallback and charging speed entity."""
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         if user_input is not None:
+            # An emptied entity field means: use the charging power parameter.
+            user_input.setdefault(CONF_CHARGE_SPEED_ENTITY, None)
             return self.async_create_entry(data=user_input)
-        cur = {**DEFAULT_OPTIONS, **self.config_entry.options}
+        cur = {**DEFAULT_OPTIONS, **self.config_entry.data, **self.config_entry.options}
+        speed = cur.get(CONF_CHARGE_SPEED_ENTITY)
         schema = vol.Schema(
             {
+                vol.Optional(
+                    CONF_CHARGE_SPEED_ENTITY, description={"suggested_value": speed} if speed else None
+                ): _entity(CHARGE_SPEED_DOMAINS),
                 vol.Required(CONF_DEFAULT_DEPARTURE_HOUR, default=cur[CONF_DEFAULT_DEPARTURE_HOUR]): _hour(),
                 vol.Required(CONF_HORIZON_DAYS, default=cur[CONF_HORIZON_DAYS]): selector.NumberSelector(
                     selector.NumberSelectorConfig(min=1, max=7, step=1, mode=selector.NumberSelectorMode.BOX)
