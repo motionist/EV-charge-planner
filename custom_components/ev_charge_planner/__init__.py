@@ -21,8 +21,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     coordinator = PlannerCoordinator(hass, entry)
     entry.runtime_data = coordinator
-    await coordinator.async_config_entry_first_refresh()
+    # The number entities restore the parameters when they are added, so the
+    # first plan is made after the platforms are set up – not with defaults.
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    await coordinator.async_refresh()
     entry.async_on_unload(coordinator.async_start_listeners())
     entry.async_on_unload(entry.add_update_listener(_async_reload))
     return True
