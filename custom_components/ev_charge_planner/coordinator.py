@@ -14,10 +14,12 @@ from homeassistant.util import dt as dt_util
 from homeassistant.util.location import distance
 
 from .adapters import prices as price_adapters
+from .adapters.charger import charge_kw as charge_kw_from_state
 from .adapters.trips import build_days
 from .const import (
     CONF_AWAY_HOURS_ENTITY,
     CONF_AWAY_NIGHTS_ENTITY,
+    CONF_CHARGE_SPEED_ENTITY,
     CONF_DEFAULT_DEPARTURE_HOUR,
     CONF_EFFICIENCY_ENTITY,
     CONF_EFFICIENCY_FALLBACK,
@@ -56,6 +58,9 @@ class PlannerCoordinator(DataUpdateCoordinator[Plan]):
         self.entry = entry
         # Parameter values; number entities restore and update these.
         self.params: dict[str, float] = {p.key: p.default for p in PARAMS}
+        # Charging power used in the last update and where it came from.
+        self.charge_kw: float | None = None
+        self.charge_speed_source: str = "manual"
 
     # ------------------------------------------------------------------ inputs
 
@@ -75,6 +80,7 @@ class PlannerCoordinator(DataUpdateCoordinator[Plan]):
             CONF_AWAY_NIGHTS_ENTITY,
             CONF_LAST_CALIBRATION_ENTITY,
             CONF_LOCATION_ENTITY,
+            CONF_CHARGE_SPEED_ENTITY,
         )
         return [e for k in keys if (e := self._conf.get(k))] + list(self._conf.get(CONF_FORECAST_MAE_ENTITIES) or [])
 
@@ -170,6 +176,18 @@ class PlannerCoordinator(DataUpdateCoordinator[Plan]):
         meters = distance(self.hass.config.latitude, self.hass.config.longitude, lat, lon)
         return False, meters / 1000 if meters is not None else None
 
+    def _charge_kw(self) -> tuple[float, str]:
+        """Charging power: from the charge speed entity when usable, else the parameter."""
+        manual = float(self.params["charge_kw"])
+        st = self._state(CONF_CHARGE_SPEED_ENTITY)
+        if st is None:
+            return manual, "manual"
+        kw = charge_kw_from_state(st.state, st.attributes.get("unit_of_measurement"), float(self.params["battery_kwh"]))
+        if kw is None:
+            _LOGGER.debug("Charge speed entity %s not usable (%s), using %s kW", st.entity_id, st.state, manual)
+            return manual, "manual (entity unavailable)"
+        return kw, st.entity_id
+
     # ------------------------------------------------------------------ update
 
     async def _async_update_data(self) -> Plan:
@@ -188,13 +206,14 @@ class PlannerCoordinator(DataUpdateCoordinator[Plan]):
             if last_cal is not None and last_cal.tzinfo is None:
                 last_cal = last_cal.replace(tzinfo=tz)
 
+        self.charge_kw, self.charge_speed_source = self._charge_kw()
         settings = Settings(
             efficiency_kwh_per_km=efficiency,
             default_departure_hour=int(conf[CONF_DEFAULT_DEPARTURE_HOUR]),
             horizon_days=int(conf[CONF_HORIZON_DAYS]),
             last_calibration=last_cal,
             forecast_mae=self._forecast_mae(),
-            **self.params,
+            **{**self.params, "charge_kw": self.charge_kw},
         )
 
         holidays = await self._holidays(now.date(), settings.horizon_days)

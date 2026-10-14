@@ -9,6 +9,7 @@
           "soc_entity": "Battery level (SoC) sensor",
           "plugged_entity": "Car plugged in / at home (optional)",
           "location_entity": "Car location tracker (optional) – the way home is taken from the SoC while the car is away",
+          "charge_speed_entity": "Charging speed entity (optional), e.g. EV Smart Charging's charging speed in %/h, or a charger power in kW/W – otherwise the Charging power number is used",
           "price_adapter": "Price source type",
           "price_entity": "Price sensor",
           "forecast_entity": "Price forecast sensor, e.g. Open Spot Forecast (optional)",
@@ -26,12 +27,14 @@
   "options": {
     "step": {
       "init": {
-        "title": "Departure and horizon",
+        "title": "Departure, horizon and charging speed",
         "data": {
+          "charge_speed_entity": "Charging speed entity (%/h, kW or W) – leave empty to use the Charging power number",
           "default_departure_hour": "Departure on days without away hours (hour)",
           "horizon_days": "Planning horizon (days)",
           "efficiency_fallback": "Efficiency if no sensor (kWh/km)"
-        }
+        },
+        "description": "The charging speed entity overrides the Charging power number while it has a usable value; when it is unavailable the number is used."
       }
     }
   },

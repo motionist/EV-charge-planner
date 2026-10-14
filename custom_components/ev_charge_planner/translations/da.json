@@ -9,6 +9,7 @@
           "soc_entity": "Batteriniveau (SoC)-sensor",
           "plugged_entity": "Bil tilsluttet / hjemme (valgfri)",
           "location_entity": "Bilens position (device tracker, valgfri) – vejen hjem trækkes fra SoC mens bilen er ude",
+          "charge_speed_entity": "Ladehastighed fra en enhed (valgfri), fx EV Smart Chargings ladehastighed i %/h eller en laders effekt i kW/W – ellers bruges tallet Ladeeffekt",
           "price_adapter": "Type af priskilde",
           "price_entity": "Prissensor",
           "forecast_entity": "Prisprognose-sensor, fx Open Spot Forecast (valgfri)",
@@ -26,12 +27,14 @@
   "options": {
     "step": {
       "init": {
-        "title": "Afgang og horisont",
+        "title": "Afgang, horisont og ladehastighed",
         "data": {
+          "charge_speed_entity": "Ladehastighed fra en enhed (%/h, kW eller W) – tom = brug tallet Ladeeffekt",
           "default_departure_hour": "Afgang uden ude-tider (kl.)",
           "horizon_days": "Planlægningshorisont (dage)",
           "efficiency_fallback": "Effektivitet uden sensor (kWh/km)"
-        }
+        },
+        "description": "Ladehastigheden fra enheden bruges i stedet for tallet Ladeeffekt, så længe den har en brugbar værdi; er den utilgængelig, bruges tallet."
       }
     }
   },
