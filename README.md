@@ -74,7 +74,7 @@ Selected in the config flow:
 ## Installation (development)
 
 1. HACS → ⋮ → Custom repositories → add
-   `https://github.com/motionist/ev-charge-planner` as *Integration*.
+   `https://github.com/motionist/EV-charge-planner` as *Integration*.
 2. Install **EV Charge Planner**, restart Home Assistant.
 3. Settings → Devices & services → Add integration → EV Charge Planner.
 
