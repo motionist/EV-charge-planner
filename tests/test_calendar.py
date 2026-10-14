@@ -13,6 +13,7 @@ from ev_charge_planner.adapters.calendar import (
     Leg,
     build_days,
     car_events,
+    clean_location,
     legs_needed,
     parse_events,
     plan_trips,
@@ -109,7 +110,8 @@ def test_evening_trip_until_after_midnight():
     assert trips[date(2026, 10, 17)].away == [(19, 24)]
     assert trips[date(2026, 10, 18)].away == [(0, 1)]  # home 00:15
     assert trips[date(2026, 10, 17)].km == 80
-    assert trips[date(2026, 10, 17)].away_overnight  # the car is away over midnight
+    # Driving home after midnight is not a night away.
+    assert not trips[date(2026, 10, 17)].away_overnight
 
 
 def test_hotel_stay_is_away_overnight():
@@ -148,3 +150,17 @@ def test_min_home_minutes_boundary(gap_minutes, expected_km):
     second = CalendarEvent(at(15, 9) + timedelta(minutes=gap_minutes), at(15, 18), "A")
     trips, _ = plan_trips([first, second], legs((HOME, "A", 10, 30)), RULES)
     assert trips[date(2026, 10, 15)].km == expected_km
+
+
+def test_clean_location():
+    assert clean_location("1 Havreholmvej\nHornbÃ¦k 3100\nDK") == "1 Havreholmvej, Hornbæk 3100, DK"
+    assert clean_location("  Ballerup  Boulevard \r\n 2750 ") == "Ballerup Boulevard, 2750"
+    assert clean_location("Søborg") == "Søborg"  # already correct text is left alone
+    raw = [{"start": "2026-10-17T18:30:00+02:00", "end": "2026-10-17T23:30:00+02:00", "location": "Vej 1\nHornbÃ¦k"}]
+    assert parse_events(raw, TZ)[0].location == "Vej 1, Hornbæk"
+
+
+def test_event_until_midnight_is_not_a_night_away():
+    trips, _ = plan_trips([ev(17, (20, 0), (22, 0), "Fest")], legs((HOME, "Fest", 40, 120)), RULES)
+    # home at 00:00 sharp
+    assert trips[date(2026, 10, 17)].away == [(18, 24)] and not trips[date(2026, 10, 17)].away_overnight

@@ -20,6 +20,7 @@ from .adapters.charger import charge_kw as charge_kw_from_state
 from .adapters.trips import build_days, parse_dates
 from .const import (
     CALENDAR_REFRESH_MINUTES,
+    CONF_ALERT_LANGUAGE,
     CONF_AWAY_HOURS_ENTITY,
     CONF_AWAY_NIGHTS_ENTITY,
     CONF_CALENDAR_ENTITIES,
@@ -385,7 +386,8 @@ class PlannerCoordinator(DataUpdateCoordinator[Plan]):
 
     async def _alert(self, snapshot: alerts.Snapshot) -> None:
         """Track the current issues and send the notifications that are due."""
-        language = self.hass.config.language
+        chosen = self._conf.get(CONF_ALERT_LANGUAGE, "auto")
+        language = self.hass.config.language if chosen == "auto" else chosen
         targets = list(self._conf.get(CONF_NOTIFY_TARGETS) or [])
         enabled = set(self._conf.get(CONF_NOTIFY_ABOUT) or []) if targets else set()
         for n in self.alerts.update(snapshot.now, alerts.detect(snapshot, language), enabled, language):

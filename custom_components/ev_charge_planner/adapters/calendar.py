@@ -18,11 +18,14 @@ Rules:
 * An all-day event with a location: away ``all_day_hours`` (06–20) on every
   date it spans, with a round trip on each.
 * A timed event over midnight (e.g. a hotel stay) is away overnight: the
-  nights it spans are away nights.
+  nights it spans are away nights. Driving home after midnight is not.
+* Locations are cleaned: line breaks become ", " and text decoded with the
+  wrong character set ("HornbÃ¦k") is repaired.
 """
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
@@ -84,6 +87,18 @@ class DayTrips:
     stops: list[dict] = field(default_factory=list)
 
 
+def clean_location(text: str) -> str:
+    """One-line location: line breaks → ", ", and UTF-8 read as Latin-1 repaired ("HornbÃ¦k" → "Hornbæk")."""
+    s = text or ""
+    if "Ã" in s or "Â" in s:
+        try:
+            s = s.encode("latin-1").decode("utf-8")
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            pass
+    s = ", ".join(p.strip() for p in re.split(r"[\r\n]+", s) if p.strip())
+    return re.sub(r"\s+", " ", s).strip()
+
+
 def split_words(text: str | None) -> tuple[str, ...]:
     """Comma separated words → lower-case tuple (empty entries dropped)."""
     return tuple(w.strip().lower() for w in (text or "").split(",") if w.strip())
@@ -122,7 +137,7 @@ def parse_events(raw: Iterable[Mapping], tz) -> list[CalendarEvent]:
             CalendarEvent(
                 start=start,
                 end=end,
-                location=str(ev.get("location") or "").strip(),
+                location=clean_location(str(ev.get("location") or "")),
                 summary=str(ev.get("summary") or ""),
                 description=str(ev.get("description") or ""),
                 all_day=all_day,
@@ -236,11 +251,13 @@ def plan_trips(
             leave = first.start - timedelta(minutes=there.minutes)
             home = max(e.end for e in block) + timedelta(minutes=back.minutes)
             _add_interval(trips, leave, home)
-            # A stay over midnight: the car is away the nights in between.
-            n = leave.date()
-            while n < home.date():
-                trips.setdefault(n, DayTrips()).away_overnight = True
-                n += timedelta(days=1)
+            # An event over midnight (a stay): the car is away those nights. Only
+            # driving home after midnight is not a night away.
+            for e in block:
+                n = e.start.date()
+                while n < (e.end - timedelta(microseconds=1)).date():
+                    trips.setdefault(n, DayTrips()).away_overnight = True
+                    n += timedelta(days=1)
             for e in block:
                 info.stops.append({"start": e.start.isoformat(), "end": e.end.isoformat(), "location": e.location, "summary": e.summary})
 

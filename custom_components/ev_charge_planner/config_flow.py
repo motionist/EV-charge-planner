@@ -12,6 +12,8 @@ from homeassistant.helpers import selector
 from .alerts import ALL_ALERTS
 from .adapters.prices import ADAPTER_ENERGI_DATA_SERVICE, ADAPTER_GENERIC, ADAPTER_NORDPOOL
 from .const import (
+    ALERT_LANGUAGES,
+    CONF_ALERT_LANGUAGE,
     CONF_AWAY_HOURS_ENTITY,
     CONF_AWAY_NIGHTS_ENTITY,
     CONF_CALENDAR_ENTITIES,
@@ -132,6 +134,9 @@ class EvChargePlannerOptionsFlow(OptionsFlow):
                 ),
                 vol.Optional(CONF_NOTIFY_ABOUT, description={"suggested_value": cur[CONF_NOTIFY_ABOUT]}): selector.SelectSelector(
                     selector.SelectSelectorConfig(options=list(ALL_ALERTS), multiple=True, translation_key=CONF_NOTIFY_ABOUT)
+                ),
+                vol.Required(CONF_ALERT_LANGUAGE, default=cur[CONF_ALERT_LANGUAGE]): selector.SelectSelector(
+                    selector.SelectSelectorConfig(options=ALERT_LANGUAGES, translation_key=CONF_ALERT_LANGUAGE)
                 ),
                 vol.Optional(CONF_CALENDAR_ENTITIES, description={"suggested_value": calendars}): _calendars(),
                 vol.Optional(CONF_HOME_WORDS, description={"suggested_value": cur[CONF_HOME_WORDS]}): selector.TextSelector(),
