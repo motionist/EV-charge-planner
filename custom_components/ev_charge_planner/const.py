@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .alerts import ALL_ALERTS
+
 DOMAIN = "ev_charge_planner"
-PLATFORMS = ["number", "sensor"]
+PLATFORMS = ["binary_sensor", "number", "sensor"]
 
 # Config entry data (entity selection)
 CONF_SOC_ENTITY = "soc_entity"
@@ -32,6 +34,8 @@ CONF_HOME_WORDS = "home_words"
 CONF_IGNORE_WORDS = "ignore_words"
 CONF_MIN_HOME_MINUTES = "min_home_minutes"
 CONF_WAZE_REGION = "waze_region"
+CONF_NOTIFY_TARGETS = "notify_targets"
+CONF_NOTIFY_ABOUT = "notify_about"
 
 WAZE_REGIONS = ["eu", "us", "na", "il", "au"]
 
@@ -43,6 +47,8 @@ DEFAULT_OPTIONS = {
     CONF_IGNORE_WORDS: "teams, zoom, meet.google, webex, online, http://, https://, #ingenbil, #tog",
     CONF_MIN_HOME_MINUTES: 60,
     CONF_WAZE_REGION: "eu",
+    CONF_NOTIFY_TARGETS: [],  # none: alerts only on the problem sensor
+    CONF_NOTIFY_ABOUT: list(ALL_ALERTS),
 }
 
 CALENDAR_REFRESH_MINUTES = 15

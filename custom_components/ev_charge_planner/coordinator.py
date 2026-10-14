@@ -13,6 +13,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 from homeassistant.util.location import distance
 
+from . import alerts
 from .adapters import calendar as cal_adapter
 from .adapters import prices as price_adapters
 from .adapters.charger import charge_kw as charge_kw_from_state
@@ -36,6 +37,8 @@ from .const import (
     CONF_LAST_CALIBRATION_ENTITY,
     CONF_LOCATION_ENTITY,
     CONF_MIN_HOME_MINUTES,
+    CONF_NOTIFY_ABOUT,
+    CONF_NOTIFY_TARGETS,
     CONF_PLUGGED_ENTITY,
     CONF_PRICE_ADAPTER,
     CONF_PRICE_ENTITY,
@@ -80,6 +83,10 @@ class PlannerCoordinator(DataUpdateCoordinator[Plan]):
         self.trips: dict[date, cal_adapter.DayTrips] = {}
         self.trip_source: str = "text helpers"
         self.missing_legs: list[str] = []
+        self._calendar_error = False
+        self._known_hours: set[tuple[date, int]] = set()
+        # Issues of the last update (problem sensor) and the notifications sent.
+        self.alerts = alerts.AlertTracker()
 
     # ------------------------------------------------------------------ inputs
 
@@ -177,6 +184,7 @@ class PlannerCoordinator(DataUpdateCoordinator[Plan]):
         fst = self._state(CONF_FORECAST_ENTITY)
         forecast = price_adapters.open_spot_forecast(dict(fst.attributes), tz) if fst else []
         known_until = max((hp.start.astimezone(tz).date() for hp in known), default=None)
+        self._known_hours = {(s.date(), s.hour) for s in (hp.start.astimezone(tz) for hp in known)}
         return merge_prices(fallback, forecast, known, tz=tz), known_until
 
     def _location(self) -> tuple[bool | None, float | None]:
@@ -234,8 +242,10 @@ class PlannerCoordinator(DataUpdateCoordinator[Plan]):
                 )
             except Exception as err:  # noqa: BLE001 – keep the last events
                 _LOGGER.warning("Could not read calendar %s: %s", cal, err)
+                self._calendar_error = True
                 return self._events or []
             raw.extend((resp or {}).get(cal, {}).get("events", []))
+        self._calendar_error = False
         self._events = cal_adapter.parse_events(raw, now.tzinfo)
         self._events_at = now
         return self._events
@@ -305,6 +315,7 @@ class PlannerCoordinator(DataUpdateCoordinator[Plan]):
 
         soc = self._float_state(CONF_SOC_ENTITY)
         if soc is None:
+            await self._alert(alerts.Snapshot(now=now, soc_ok=False, price_dates={now.date() + timedelta(days=i) for i in range(4)}))
             raise UpdateFailed("State of charge is unavailable")
 
         efficiency = self._float_state(CONF_EFFICIENCY_ENTITY) or float(conf[CONF_EFFICIENCY_FALLBACK])
@@ -337,7 +348,7 @@ class PlannerCoordinator(DataUpdateCoordinator[Plan]):
             )
         prices, known_until = self._prices(tz)
         car_home, distance_km = self._location()
-        return plan(
+        result = plan(
             now,
             soc,
             days,
@@ -347,3 +358,56 @@ class PlannerCoordinator(DataUpdateCoordinator[Plan]):
             car_home=car_home,
             distance_km=distance_km,
         )
+        short = next(
+            (r.day for r in result.rows if r.requirement is not None and r.soc_departure is not None and r.soc_departure < r.requirement - 0.5),
+            None,
+        )
+        plugged = self._state(CONF_PLUGGED_ENTITY)
+        await self._alert(
+            alerts.Snapshot(
+                now=now,
+                known_until=known_until,
+                price_dates={d for (d, _h) in prices},
+                price_now=(now.date(), now.hour) in self._known_hours,
+                calendar_error=self._calendar_error,
+                missing_legs=self.missing_legs,
+                unmet=result.unmet,
+                unmet_day=short,
+                first_charge=result.next_charge.start if result.next_charge else None,
+                car_home=car_home,
+                plugged=None if plugged is None or plugged.state not in ("on", "off") else plugged.state == "on",
+                charge_speed_fallback=self.charge_speed_source.startswith("manual ("),
+            )
+        )
+        return result
+
+    # ---------------------------------------------------------------- alerts
+
+    async def _alert(self, snapshot: alerts.Snapshot) -> None:
+        """Track the current issues and send the notifications that are due."""
+        language = self.hass.config.language
+        targets = list(self._conf.get(CONF_NOTIFY_TARGETS) or [])
+        enabled = set(self._conf.get(CONF_NOTIFY_ABOUT) or []) if targets else set()
+        for n in self.alerts.update(snapshot.now, alerts.detect(snapshot, language), enabled, language):
+            for target in targets:
+                await self._send(target, n)
+
+    async def _send(self, target: str, n: alerts.Notification) -> None:
+        try:
+            if target == "persistent_notification":
+                notification_id = f"{DOMAIN}_{self.entry.entry_id}_{n.key}"
+                if n.kind == "resolved":
+                    await self.hass.services.async_call("persistent_notification", "dismiss", {"notification_id": notification_id})
+                else:
+                    await self.hass.services.async_call(
+                        "persistent_notification", "create", {"title": n.title, "message": n.message, "notification_id": notification_id}
+                    )
+                return
+            domain, service = target.split(".", 1)
+            data: dict[str, Any] = {"title": n.title, "message": n.message} if n.message else {"message": n.title}
+            if service.startswith("mobile_app_"):
+                # The same tag replaces the earlier notification of this issue on the phone.
+                data["data"] = {"tag": f"{DOMAIN}_{n.key}"}
+            await self.hass.services.async_call(domain, service, data)
+        except Exception as err:  # noqa: BLE001 – a failing target must not stop the plan
+            _LOGGER.warning("Could not send %s notification to %s: %s", n.key, target, err)

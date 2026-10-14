@@ -256,6 +256,31 @@ shown in the plan.
   departure, forecast factor, calibration, away overnight and status
   (`charge`, `covered` = an earlier charge covers this date, `not_needed`).
 
+### 5.6 Alerts
+
+A **Problem** binary sensor is on while there is an issue (the issues are
+its attributes). Optionally, alerts are sent to Home Assistant
+notifications and/or notify services (e.g. the companion app on a phone),
+chosen in the options flow together with which alerts to send. An issue is
+notified only once it has lasted its grace period, repeated every 24 h while
+it lasts, and followed by a short message when it is OK again (a Home
+Assistant notification is dismissed; on the companion app the same tag
+replaces the alert).
+
+| Alert | Raised when | Grace |
+|---|---|---|
+| Plug in the car | charging is planned within 2 h, the car is home and the plugged-in sensor is off | – |
+| Not enough time | a departure cannot reach its requirement (`unmet`) | 15 min |
+| Battery level missing | the SoC sensor is unavailable | 1 h |
+| Prices missing now | no known price for the current hour | 1 h |
+| Tomorrow's prices missing | after 15:00 there are no known prices for tomorrow | – |
+| No prices ahead | one of the next 3 days has neither a known nor a forecast price – forecasts are optional, so only a gap that lasts matters | 24 h |
+| Calendar | the calendars could not be read | 1 h |
+| Routing | legs could not be routed (`missing_legs`) | 1 h |
+| Charging speed | the charging speed entity has no usable value (the number is used) | 1 h |
+
+Texts are in Danish when Home Assistant's language is Danish, else English.
+
 ## 6. Parameters (number entities)
 
 | Entity | Default | Unit |

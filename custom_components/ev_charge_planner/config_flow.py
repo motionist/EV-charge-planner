@@ -9,6 +9,7 @@ from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResu
 from homeassistant.core import callback
 from homeassistant.helpers import selector
 
+from .alerts import ALL_ALERTS
 from .adapters.prices import ADAPTER_ENERGI_DATA_SERVICE, ADAPTER_GENERIC, ADAPTER_NORDPOOL
 from .const import (
     CONF_AWAY_HOURS_ENTITY,
@@ -28,6 +29,8 @@ from .const import (
     CONF_LAST_CALIBRATION_ENTITY,
     CONF_LOCATION_ENTITY,
     CONF_MIN_HOME_MINUTES,
+    CONF_NOTIFY_ABOUT,
+    CONF_NOTIFY_TARGETS,
     CONF_PLUGGED_ENTITY,
     CONF_PRICE_ADAPTER,
     CONF_PRICE_ENTITY,
@@ -111,12 +114,25 @@ class EvChargePlannerOptionsFlow(OptionsFlow):
             user_input.setdefault(CONF_CHARGE_SPEED_ENTITY, None)
             user_input.setdefault(CONF_HOME_WORDS, "")
             user_input.setdefault(CONF_IGNORE_WORDS, "")
+            user_input.setdefault(CONF_NOTIFY_TARGETS, [])
+            user_input.setdefault(CONF_NOTIFY_ABOUT, [])
             return self.async_create_entry(data=user_input)
         cur = {**DEFAULT_OPTIONS, **self.config_entry.data, **self.config_entry.options}
         speed = cur.get(CONF_CHARGE_SPEED_ENTITY)
         calendars = cur.get(CONF_CALENDAR_ENTITIES) or []
+        targets = [{"value": "persistent_notification", "label": "Home Assistant"}] + [
+            {"value": f"notify.{name}", "label": name}
+            for name in sorted(self.hass.services.async_services_for_domain("notify"))
+            if name not in ("send_message", "persistent_notification")
+        ]
         schema = vol.Schema(
             {
+                vol.Optional(CONF_NOTIFY_TARGETS, description={"suggested_value": cur[CONF_NOTIFY_TARGETS]}): selector.SelectSelector(
+                    selector.SelectSelectorConfig(options=targets, multiple=True, custom_value=True)
+                ),
+                vol.Optional(CONF_NOTIFY_ABOUT, description={"suggested_value": cur[CONF_NOTIFY_ABOUT]}): selector.SelectSelector(
+                    selector.SelectSelectorConfig(options=list(ALL_ALERTS), multiple=True, translation_key=CONF_NOTIFY_ABOUT)
+                ),
                 vol.Optional(CONF_CALENDAR_ENTITIES, description={"suggested_value": calendars}): _calendars(),
                 vol.Optional(CONF_HOME_WORDS, description={"suggested_value": cur[CONF_HOME_WORDS]}): selector.TextSelector(),
                 vol.Optional(CONF_IGNORE_WORDS, description={"suggested_value": cur[CONF_IGNORE_WORDS]}): selector.TextSelector(),

@@ -81,6 +81,16 @@ Selected in the config flow:
   * away nights: `2026-10-10,2026-10-11` (car away the night after these dates)
 * Optional public-holiday calendar, optional last-calibration datetime.
 
+## Alerts
+
+A **Problem** sensor shows when information is missing or you should act –
+e.g. *plug in the car* (charging planned within 2 h but not plugged in), *not
+enough time to charge*, tomorrow's prices missing after 15:00, no prices for
+the coming days for 24 h, the calendar or routing failing, the battery level
+missing. In the options you can send these alerts to Home Assistant
+notifications and/or your phone (companion app) and pick which ones. See
+[DESIGN.md §5.6](docs/DESIGN.md).
+
 ## Installation (development)
 
 1. HACS → ⋮ → Custom repositories → add

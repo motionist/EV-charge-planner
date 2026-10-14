@@ -30,6 +30,8 @@
       "init": {
         "title": "Trips, charging speed and departure",
         "data": {
+          "notify_targets": "Send alerts to – Home Assistant notifications and/or a phone (empty: only the Problem sensor)",
+          "notify_about": "Alerts to send",
           "calendar_entities": "Calendars with your trips – empty: use the text helpers",
           "home_words": "Home words (comma separated) – locations containing one of them are home",
           "ignore_words": "Ignore words (comma separated) – events with one of them in location, title or description are not driven",
@@ -40,7 +42,7 @@
           "horizon_days": "Planning horizon (days)",
           "efficiency_fallback": "Efficiency if no sensor (kWh/km)"
         },
-        "description": "Calendars: events with a location are car trips (km and travel time from Waze Travel Time). Locations containing a home word, or within 1 km of home, are home; events whose location, title or description contains an ignore word are not driven. Between two events the car goes home when that leaves at least the given time at home. The charging speed entity overrides the Charging power number while it has a usable value."
+        "description": "Calendars: events with a location are car trips (km and travel time from Waze Travel Time). Locations containing a home word, or within 1 km of home, are home; events whose location, title or description contains an ignore word are not driven. Between two events the car goes home when that leaves at least the given time at home. The charging speed entity overrides the Charging power number while it has a usable value. Alerts: missing information is only notified when it lasts (time in brackets); a reminder follows every 24 h and a short message when it is OK again."
       }
     }
   },
@@ -60,9 +62,27 @@
         "il": "Israel",
         "au": "Australia"
       }
+    },
+    "notify_about": {
+      "options": {
+        "plug_in": "Plug in the car (charging planned within 2 h, not plugged in)",
+        "unmet": "Not enough time to charge before a departure",
+        "soc": "Battery level missing (1 h)",
+        "prices_now": "No known price for the current hour (1 h)",
+        "prices_tomorrow": "Tomorrow's prices missing after 15:00",
+        "prices_ahead": "No known or forecast prices for the next 3 days (24 h)",
+        "calendar": "Calendar cannot be read (1 h)",
+        "routing": "Trips cannot be routed (1 h)",
+        "charge_speed": "Charging speed entity unavailable (1 h)"
+      }
     }
   },
   "entity": {
+    "binary_sensor": {
+      "problem": {
+        "name": "Problem"
+      }
+    },
     "sensor": {
       "target_soc": {
         "name": "Target SoC"
