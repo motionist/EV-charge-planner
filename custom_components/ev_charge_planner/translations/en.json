@@ -8,6 +8,7 @@
           "name": "Name",
           "soc_entity": "Battery level (SoC) sensor",
           "plugged_entity": "Car plugged in / at home (optional)",
+          "location_entity": "Car location tracker (optional) – the way home is taken from the SoC while the car is away",
           "price_adapter": "Price source type",
           "price_entity": "Price sensor",
           "forecast_entity": "Price forecast sensor, e.g. Open Spot Forecast (optional)",
@@ -67,6 +68,15 @@
       },
       "max_level": {
         "name": "Max level"
+      },
+      "max_level_long_trip": {
+        "name": "Max level before a long trip"
+      },
+      "long_trip_km": {
+        "name": "Long trip from"
+      },
+      "long_trip_advantage_pct": {
+        "name": "Price advantage for the long-trip cap"
       },
       "buffer_km": {
         "name": "Buffer after trips"

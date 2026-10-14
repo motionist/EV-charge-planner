@@ -34,6 +34,7 @@ def _hour(ch: ChargeHour) -> dict[str, Any]:
     return {
         "start": ch.start.isoformat(),
         "pct": ch.pct,
+        "kwh": ch.kwh,
         "price": ch.raw_price,
         "price_adjusted": ch.price,
         "known": ch.known,
@@ -81,6 +82,8 @@ class TargetSocSensor(_Base):
             "charge_now": p.charge_now,
             "calibration": p.calibration,
             "unmet": p.unmet,
+            "remaining_km": p.remaining_km,
+            "soc_home": p.soc_home,
         }
 
 
@@ -151,6 +154,8 @@ class PlanSensor(_Base):
                 "departure_hour": r.departure_hour,
                 "requirement": r.requirement,
                 "charge_pct": r.charge_pct,
+                "charge_kwh": r.charge_kwh,
+                "cost": r.cost,
                 "charge_hours": [ch.start.hour for ch in r.charge_hours],
                 "charge_known": all(ch.known for ch in r.charge_hours),
                 "soc_departure": r.soc_departure,
@@ -161,4 +166,12 @@ class PlanSensor(_Base):
             }
             for r in p.rows
         ]
-        return {"hours": [_hour(ch) for ch in p.hours], "rows": rows}
+        totals = {
+            "kwh": round(p.kwh_known + p.kwh_forecast, 2),
+            "cost": round(p.cost_known + p.cost_forecast, 2),
+            "kwh_known": p.kwh_known,
+            "cost_known": p.cost_known,
+            "kwh_forecast": p.kwh_forecast,
+            "cost_forecast": p.cost_forecast,
+        }
+        return {"hours": [_hour(ch) for ch in p.hours], "rows": rows, "totals": totals}

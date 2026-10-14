@@ -23,6 +23,12 @@ the trips plus a safety buffer, bought at the cheapest hours.
   cheaper comes in time it **tops up** – never above the max level (default
   90 %). A long trip later in the week is topped up in the cheapest hour
   before it.
+* **High cap before long trips**: right before a long trip (default ≥ 100
+  km) it may charge up to 100 % when that is at least 30 % cheaper than
+  charging after the trip – never days in advance.
+* **Car away now**: with a location tracker, the way home is taken from the
+  SoC while the car is out, so tomorrow's plan does not count on energy that
+  will be used on the way back.
 * Optional periodic **battery calibration** charge in a cheap hour.
 * Uses known prices first, then a price forecast (e.g. Open Spot Forecast),
   then a fallback forecast (e.g. Energi Data Service).
@@ -42,14 +48,15 @@ the trips plus a safety buffer, bought at the cheapest hours.
 | `sensor.<name>_target_soc` | Target SoC to hand over – charge to this level before *charge until*. Feed it to EV Smart Charging, your charger integration or an automation. |
 | `sensor.<name>_charge_until` | End of the hand-over (next departure or last known price hour) – e.g. EV Smart Charging's completion time. |
 | `sensor.<name>_next_charge_start` | The first planned charging hour (known or forecast). |
-| `sensor.<name>_plan` | The full plan: `hours` (every planned hour with %, price and known/forecast) and `rows` (one per date) for your own dashboard – see [docs/example-card.md](docs/example-card.md). |
-| `number.<name>_*` | Parameters: floors, max level, buffer (km), battery capacity, charging power, calibration settings, forecast min. accuracy and far factor. |
+| `sensor.<name>_plan` | The full plan: `hours` (every planned hour with %, kWh, price and known/forecast), `rows` (one per date) and `totals` (kWh and cost for known and forecast prices) for your own dashboard – see [docs/example-card.md](docs/example-card.md). |
+| `number.<name>_*` | Parameters: floors, max level, high cap before long trips (level, km, price advantage), buffer (km), battery capacity, charging power, calibration settings, forecast min. accuracy and far factor. |
 
 ## Inputs (v0.1)
 
 Selected in the config flow:
 
-* Battery level (SoC) sensor, optional plugged-in/home binary sensor.
+* Battery level (SoC) sensor, optional plugged-in/home binary sensor,
+  optional car location (device tracker).
 * Price sensor: **Energi Data Service** (known prices + its forecast),
   **Nord Pool** (custom integration) or a generic list attribute.
 * Optional price forecast sensor (**Open Spot Forecast**) and its error
@@ -67,7 +74,7 @@ Selected in the config flow:
 ## Installation (development)
 
 1. HACS → ⋮ → Custom repositories → add
-   `https://github.com/motionist/EV-charge-planner` as *Integration*.
+   `https://github.com/motionist/ev-charge-planner` as *Integration*.
 2. Install **EV Charge Planner**, restart Home Assistant.
 3. Settings → Devices & services → Add integration → EV Charge Planner.
 

@@ -42,6 +42,8 @@ Non-goals:
 | **Floor** | Minimum SoC at departure: `floor_weekday` or `floor_weekend` (weekend = Sat/Sun or a public holiday). |
 | **Buffer** | Range that must remain *after* the planned trips: `buffer_km` (default 100 km) converted to %. |
 | **Max level** | Upper cap for normal charging (default 90 %). Long trips may therefore not be able to keep the full buffer – this is accepted. |
+| **Long trip** | A departure whose consumption is at least `long_trip_km` (default 100 km). |
+| **High cap** | `max_level_long_trip` (default 100 %): the cap in the home stay right before a long trip when charging there is much cheaper (§5.1). |
 | **Consumption** | `km × efficiency_kwh_per_km ÷ battery_kwh × 100` (% of battery). |
 | **Forecast accuracy** | Per date that only has forecast prices: `1 − MAE ÷ mean known price`, where MAE is the forecast's mean absolute error for that lead day (see §5.0). Known prices have accuracy 1. |
 | **Adjusted price** | The price the planner compares hours by: the known price, or a forecast price divided by its accuracy when the accuracy is below `forecast_min_accuracy`. A known price therefore weighs more than a forecast of the same size. |
@@ -51,7 +53,8 @@ Non-goals:
 | Input | Source (configurable) | Notes |
 |---|---|---|
 | Current SoC | sensor entity | % |
-| Car at home / plugged in | binary_sensor (optional) | planner still produces a plan when unplugged |
+| Car at home / plugged in | binary_sensor (optional) | planner still produces a plan when unplugged; plugged in ⇒ home |
+| Car location | device_tracker (optional) | home or not, and the straight-line distance home from its latitude/longitude (§5.4) |
 | Hourly prices | price adapter | layered: **known prices** (today/tomorrow) override **forecast** (e.g. Open Spot Forecast, next ~4 days) which override a **fallback forecast** (e.g. Energi Data Service forecast). Missing hours have no price: the car cannot be planned to charge in them. |
 | Forecast error per lead day | sensor(s), optional | MAE in currency/kWh for lead day 1–4, e.g. Open Spot Forecast's `forecast_mae_day_1…4` sensors. Lead days beyond the last sensor use the last value × `forecast_far_factor`. Missing ⇒ forecasts are trusted (no adjustment). |
 | km per day | trip adapter | v0.1: legacy text format `YYYY-MM-DD=km;…`, e.g. produced from Google Calendar with HERE routing – see [here-routing.md](here-routing.md). v0.2: calendar + routing built in. |
@@ -137,6 +140,29 @@ Consequences – exactly the behaviour asked for:
   up in the cheapest hour before that trip (the cap check only looks at the
   SoC *before* the departure that needs the energy).
 
+**High cap before long trips.** 90 % may not cover a long trip plus the
+floor of the morning after, and the rest would then be charged expensively
+after the trip. So a second candidate is found in step 3 with the cap
+`max_level_long_trip` instead of `max_level`, but only for slots whose
+**next departure is a long trip**, and the SoC must be back within
+`max_level` after that trip:
+
+`high_room = min(capacity − planned, max_level_long_trip − highest SoC between i and the long trip, max_level − highest SoC after it)`.
+
+It is used instead of the best slot within the max level when it is at
+least `long_trip_advantage_pct` (default 30 %) cheaper
+(`price_high ≤ price − |price| × advantage`), or when no slot within the max
+level has room. Consequences:
+
+* The battery is only above the max level in the home stay right before the
+  long trip – never across an earlier departure, so it is not kept at 100 %
+  for days (seen in the private installation: a cheap known night two
+  nights before the trip filled the battery to 100 % for the floor of the
+  morning *after* the trip).
+* With only a small price difference the trip is charged to the max level
+  as before and the rest after it.
+* `max_level_long_trip ≤ max_level` disables the rule.
+
 ### 5.2 Calibration (optional)
 
 Lithium batteries' SoC estimate drifts; periodically charging high
@@ -169,15 +195,35 @@ Everything after the hand-over end is the *expected* plan. It is recomputed
 on every update (every 5 minutes, new prices, new trips, SoC changes), so
 forecast hours are only ever acted on once their prices are known.
 
-### 5.4 Outputs
+### 5.4 Car away now
+
+Each date's consumption is drawn at its departure, so after the car has left
+it is already counted – except what is still to be driven today. When the
+car is not at home (location tracker not `home`, not plugged in), the rest
+of today's driving is subtracted from the current SoC before planning:
+
+`remaining_km = max(1.3 × straight-line distance home, ½ × today's km while a calendar away interval is ongoing)`.
+
+The half of today's km is the return leg of a round trip; the distance
+covers trips that are not in the calendar. Unknown location ⇒ only the
+calendar part. For today, only trips that have not started yet count as a
+departure, so a second trip later in the day still gets its requirement.
+Once today's trips are over and the car is home, today's km are no longer
+shown in the plan.
+
+### 5.5 Outputs
 
 * **Target SoC** and **charge until** (§5.3), plus `charge_now` (the
-  percentage handed over), `unmet` and a calibration flag.
+  percentage handed over), `unmet`, a calibration flag, `remaining_km` and
+  `soc_home` (the SoC expected when the car is home, §5.4).
 * **Next charge** = the first planned hour (known or forecast).
-* **Hours** = every planned hour: start, % charged, raw and adjusted price,
-  known/forecast, calibration.
+* **Hours** = every planned hour: start, % and kWh charged, raw and adjusted
+  price, known/forecast, calibration.
+* **Totals** = planned kWh and cost (raw price × kWh, charging losses not
+  included), split into hours with a known price and hours with a forecast
+  price – the forecast part is an estimate until the prices are published.
 * **Rows** = one per date: type (weekday/weekend/holiday), km, floor,
-  departure hour, requirement, planned % and hours, expected SoC at
+  departure hour, requirement, planned %, kWh, cost and hours, expected SoC at
   departure, forecast factor, calibration, away overnight and status
   (`charge`, `covered` = an earlier charge covers this date, `not_needed`).
 
@@ -188,6 +234,9 @@ forecast hours are only ever acted on once their prices are known.
 | Floor weekday | 50 | % |
 | Floor weekend/holiday | 40 | % |
 | Max level | 90 | % |
+| Max level before a long trip (`max_level_long_trip`) | 100 | % |
+| Long trip from (`long_trip_km`) | 100 | km |
+| Price advantage for the high cap (`long_trip_advantage_pct`) | 30 | % |
 | Buffer after trips | 100 | km |
 | Battery capacity | 75 | kWh |
 | Charging power (`charge_kw`) | 11 | kW |

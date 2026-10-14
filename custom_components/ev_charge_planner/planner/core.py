@@ -14,6 +14,7 @@ from .models import ChargeHour, DayInfo, HourPrice, Plan, PlanRow, Settings
 HourMap = dict[tuple[date, int], float]
 
 EPS = 0.05  # percentage points treated as "nothing"
+ROAD_FACTOR = 1.3  # road distance ≈ 1.3 × straight-line distance
 
 
 def merge_prices(*layers: Iterable[HourPrice], tz=None) -> HourMap:
@@ -78,10 +79,21 @@ def floor_for(day: date, info: DayInfo | None, s: Settings) -> float:
     return s.floor_weekday if day_type(day, info) == "weekday" else s.floor_weekend
 
 
-def departure_hour(info: DayInfo | None, s: Settings) -> int:
-    """First hour the car leaves on a date: its first away hour, else the default."""
+def _end(start: int, end: int) -> int:
+    """End hour of an away interval; an end at or before the start means midnight."""
+    return end if end > start else 24
+
+
+def departure_hour(info: DayInfo | None, s: Settings, after: int | None = None) -> int:
+    """First hour the car leaves on a date: its first away hour, else the default.
+
+    With ``after`` (today's current hour) only trips that start later count,
+    so a later trip is still a departure once the first one has started.
+    """
     if info is not None and info.away_hours:
-        return min(start for start, _end in info.away_hours)
+        starts = [start for start, _end in info.away_hours]
+        later = [h for h in starts if after is None or h > after]
+        return min(later or starts)
     return s.default_departure_hour
 
 
@@ -110,12 +122,30 @@ def is_home(day: date, hour: int, days: Mapping[date, DayInfo], s: Settings) -> 
     """Whether the car is at home (and can charge) in the given hour."""
     info = days.get(day)
     if info is not None:
-        if any(start <= hour < end for start, end in info.away_hours):
+        if any(start <= hour < _end(start, end) for start, end in info.away_hours):
             return False
         if info.away_overnight and hour >= departure_hour(info, s):
             return False
     prev = days.get(day - timedelta(days=1))
     return not (prev is not None and prev.away_overnight and hour < s.default_departure_hour)
+
+
+def remaining_km(now: datetime, days: Mapping[date, DayInfo], car_home: bool | None, distance_km: float | None) -> float:
+    """km still to drive today before the car is home again (DESIGN §5.4).
+
+    Today's consumption is drawn at its departure, so once the car has left it
+    is already in the SoC – except the way back. ``car_home`` is ``None`` when
+    unknown. The estimate is the larger of the road distance home
+    (``ROAD_FACTOR`` × straight line) and, during a calendar away interval,
+    half of the day's km (the return leg of a round trip).
+    """
+    if car_home:
+        return 0.0
+    by_distance = distance_km * ROAD_FACTOR if car_home is False and distance_km else 0.0
+    info = days.get(now.date())
+    away_now = info is not None and any(start <= now.hour < _end(start, end) for start, end in info.away_hours)
+    by_calendar = info.km / 2 if away_now and info is not None else 0.0
+    return max(by_distance, by_calendar)
 
 
 # --------------------------------------------------------------------------- #
@@ -159,8 +189,9 @@ def build_slots(
         cap = 0.0 if raw is None or not home else rate * (remaining if i == 0 else 1.0)
         slot = _Slot(start, adjusted.get((d, h)), raw, known_until is None or d <= known_until, cap)
         info = days.get(d)
+        dep = departure_hour(info, s, now.hour if d == now.date() else None)
         # A departure in the current hour has already happened unless it is exactly now.
-        if h == departure_hour(info, s) and d not in departed and (i > 0 or now == t0):
+        if h == dep and d not in departed and (i > 0 or now == t0):
             departed.add(d)
             prev = days.get(d - timedelta(days=1))
             slot.departs = True
@@ -189,10 +220,19 @@ def allocate(soc: float, slots: list[_Slot], q: list[float], s: Settings) -> flo
     (the latest of equally cheap hours),
     without the battery exceeding the max level before the departure. Charging
     therefore only reaches the next cheaper hour unless nothing cheaper comes
-    in time, in which case it tops up (to at most the max level). ``q`` is
-    updated in place; returns the percentage that could not be planned.
+    in time, in which case it tops up (to at most the max level).
+
+    High cap before long trips: in the home stay right before a departure of
+    at least ``long_trip_km`` an hour may charge up to ``max_level_long_trip``
+    when it is at least ``long_trip_advantage_pct`` cheaper than the best hour
+    within the max level (or no such hour exists). The battery must be back
+    within the max level after that trip. ``q`` is updated in place; returns
+    the percentage that could not be planned.
     """
     unmet = 0.0
+    high = max(s.max_level_long_trip, s.max_level)
+    long_use = s.long_trip_km * s.pct_per_km()
+    advantage = s.long_trip_advantage_pct / 100
     for j, slot in enumerate(slots):
         if slot.requirement is None:
             continue
@@ -201,22 +241,46 @@ def allocate(soc: float, slots: list[_Slot], q: list[float], s: Settings) -> flo
             deficit = slot.requirement - levels[j]
             if deficit <= EPS:
                 break
-            # suffix[i] = highest SoC between charging in slot i and departure j
+            # suffix[i] = highest SoC between charging in slot i and departure j;
+            # high_room[i] = room under the high cap: only when the next
+            # departure after slot i is a long trip, back within the max level
+            # after it.
             suffix = [0.0] * (j + 1)
-            highest = float("-inf")
+            high_room = [0.0] * (j + 1)
+            highest = segment = after = float("-inf")
+            nxt = j
             for k in range(j, -1, -1):
                 suffix[k] = highest
+                if slots[nxt].use > 0 and slots[nxt].use >= long_use:
+                    high_room[k] = min(high - segment, s.max_level - after)
+                else:
+                    high_room[k] = s.max_level - highest
+                if slots[k].departs:
+                    after, segment, nxt = highest, levels[k], k
+                else:
+                    segment = max(segment, levels[k])
                 highest = max(highest, levels[k])
             best: int | None = None
             best_room = 0.0
+            best_high: int | None = None
+            best_high_room = 0.0
             for i in range(j):
                 price = slots[i].price
                 if price is None:
                     continue
-                room = min(slots[i].capacity - q[i], s.max_level - suffix[i])
+                free = slots[i].capacity - q[i]
+                room = min(free, s.max_level - suffix[i])
                 # On equal prices take the later hour: it postpones the decision.
                 if room > EPS and (best is None or price <= slots[best].price):  # type: ignore[operator]
                     best, best_room = i, room
+                room = min(free, high_room[i])
+                if room > EPS and (best_high is None or price <= slots[best_high].price):  # type: ignore[operator]
+                    best_high, best_high_room = i, room
+            if best_high is not None and best_high != best:
+                p_high = slots[best_high].price
+                p_best = slots[best].price if best is not None else None
+                if p_best is None or p_high <= p_best - abs(p_best) * advantage:  # type: ignore[operator]
+                    best, best_room = best_high, best_high_room
             if best is None:
                 unmet += deficit
                 break
@@ -295,6 +359,8 @@ def plan(
     prices: HourMap,
     s: Settings,
     known_until: date | None = None,
+    car_home: bool | None = None,
+    distance_km: float | None = None,
 ) -> Plan:
     """Plan charging hour by hour over the horizon (DESIGN §5).
 
@@ -302,7 +368,13 @@ def plan(
     forecasts, adjusted for their accuracy before any comparison (§5.0), and
     are never handed over to the charger integration. ``None`` treats every
     price as known.
+
+    ``car_home`` and ``distance_km`` (straight line from home) describe where
+    the car is now; away from home, the rest of today's driving is taken from
+    the SoC before planning (§5.4).
     """
+    rest_km = remaining_km(now, days, car_home, distance_km)
+    soc = soc - rest_km * s.pct_per_km()
     factors = forecast_factors(prices, known_until, s)
     slots = build_slots(now, days, prices, adjust_prices(prices, factors), known_until, s)
     q = [0.0] * len(slots)
@@ -319,6 +391,8 @@ def plan(
     hours: list[ChargeHour] = []
     charged = 0.0
     level = float(soc)
+    kwh_per_pct = s.battery_kwh / 100
+    totals = {True: [0.0, 0.0], False: [0.0, 0.0]}  # known → [kWh, cost]
     for i, slot in enumerate(slots):
         d = slot.start.date()
         if d not in rows:
@@ -331,6 +405,8 @@ def plan(
                 departure_hour=None,
                 requirement=None,
                 charge_pct=0.0,
+                charge_kwh=0.0,
+                cost=None,
                 charge_hours=[],
                 soc_departure=None,
                 forecast_factor=factors.get(d, 1.0),
@@ -345,14 +421,33 @@ def plan(
                 if charged > EPS and row.status != "charge":
                     row.status = "covered"
         if q[i] > EPS:
-            ch = ChargeHour(slot.start, round(q[i], 2), slot.price, slot.raw_price, slot.known, i in cal_hours)
+            kwh = q[i] * kwh_per_pct
+            ch = ChargeHour(
+                start=slot.start,
+                pct=round(q[i], 2),
+                kwh=round(kwh, 2),
+                price=slot.price,
+                raw_price=slot.raw_price,
+                known=slot.known,
+                calibration=i in cal_hours,
+            )
             hours.append(ch)
             row.charge_hours.append(ch)
             row.charge_pct = round(row.charge_pct + q[i], 2)
+            row.charge_kwh = round(row.charge_kwh + kwh, 2)
+            if slot.raw_price is not None:
+                row.cost = round((row.cost or 0.0) + kwh * slot.raw_price, 2)
+                totals[slot.known][0] += kwh
+                totals[slot.known][1] += kwh * slot.raw_price
             row.calibration = row.calibration or ch.calibration
             row.status = "charge"
             charged += q[i]
         level += q[i] - slot.use
+
+    # Today's trips are over and the car is home: today's km no longer matter.
+    today = rows.get(now.date())
+    if today is not None and today.soc_departure is None and rest_km == 0:
+        today.km = 0.0
 
     return Plan(
         target_soc=int(min(round(soc + charge_now), 100)),
@@ -362,4 +457,10 @@ def plan(
         rows=[rows[d] for d in sorted(rows)],
         unmet=round(unmet, 1),
         calibration=bool(cal_hours),
+        remaining_km=round(rest_km, 1),
+        soc_home=round(soc, 1),
+        kwh_known=round(totals[True][0], 2),
+        cost_known=round(totals[True][1], 2),
+        kwh_forecast=round(totals[False][0], 2),
+        cost_forecast=round(totals[False][1], 2),
     )

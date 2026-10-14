@@ -41,6 +41,13 @@ class Settings:
     floor_weekend: float = 40.0
     max_level: float = 90.0
     buffer_km: float = 100.0
+    # High cap before long trips (DESIGN §5.1): the home stay right before a
+    # departure of at least long_trip_km may charge above max_level, up to
+    # max_level_long_trip, in an hour at least long_trip_advantage_pct cheaper
+    # than the best hour within max_level.
+    max_level_long_trip: float = 100.0
+    long_trip_km: float = 100.0
+    long_trip_advantage_pct: float = 30.0
     charge_kw: float = 11.0  # charging power at the home charger
     # Departure on a date without away hours (and return after an away night).
     default_departure_hour: int = 8
@@ -82,6 +89,7 @@ class ChargeHour:
 
     start: datetime
     pct: float  # battery percentage charged in this hour
+    kwh: float  # energy into the battery in this hour (charging losses not included)
     price: float | None  # adjusted price used for the decision
     raw_price: float | None  # price as reported by the price source
     known: bool  # True for a known (day-ahead) price, False for a forecast
@@ -99,6 +107,8 @@ class PlanRow:
     departure_hour: int | None  # None when the car does not depart from home
     requirement: float | None  # SoC needed at departure
     charge_pct: float  # planned charging on this date (all hours)
+    charge_kwh: float
+    cost: float | None  # raw price × kWh of the hours with a price
     charge_hours: list[ChargeHour]
     soc_departure: float | None  # expected SoC at departure
     forecast_factor: float = 1.0  # accuracy factor of this date's prices
@@ -124,6 +134,14 @@ class Plan:
     rows: list[PlanRow]
     unmet: float = 0.0  # percentage that cannot be charged in time
     calibration: bool = False
+    # km still to drive before the car is home again, and the SoC expected then
+    remaining_km: float = 0.0
+    soc_home: float | None = None
+    # Planned energy and cost by price basis (raw prices, charging losses not included)
+    kwh_known: float = 0.0
+    cost_known: float = 0.0
+    kwh_forecast: float = 0.0
+    cost_forecast: float = 0.0
 
     @property
     def next_charge(self) -> ChargeHour | None:

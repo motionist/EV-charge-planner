@@ -20,6 +20,7 @@ CONF_AWAY_HOURS_ENTITY = "away_hours_entity"
 CONF_AWAY_NIGHTS_ENTITY = "away_nights_entity"
 CONF_HOLIDAY_CALENDAR = "holiday_calendar"
 CONF_LAST_CALIBRATION_ENTITY = "last_calibration_entity"
+CONF_LOCATION_ENTITY = "location_entity"
 
 # Options
 CONF_DEFAULT_DEPARTURE_HOUR = "default_departure_hour"
@@ -52,6 +53,9 @@ PARAMS: tuple[ParamSpec, ...] = (
     ParamSpec("floor_weekday", 50, 0, 100, 1, "%", "mdi:battery-arrow-up"),
     ParamSpec("floor_weekend", 40, 0, 100, 1, "%", "mdi:battery-arrow-up-outline"),
     ParamSpec("max_level", 90, 50, 100, 1, "%", "mdi:battery-lock"),
+    ParamSpec("max_level_long_trip", 100, 50, 100, 1, "%", "mdi:battery-high"),
+    ParamSpec("long_trip_km", 100, 0, 1000, 10, "km", "mdi:road-variant"),
+    ParamSpec("long_trip_advantage_pct", 30, 0, 80, 5, "%", "mdi:cash-minus"),
     ParamSpec("buffer_km", 100, 0, 300, 10, "km", "mdi:map-marker-distance"),
     ParamSpec("battery_kwh", 75, 10, 200, 0.5, "kWh", "mdi:car-battery"),
     ParamSpec("charge_kw", 11, 1, 50, 0.1, "kW", "mdi:ev-station"),

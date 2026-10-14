@@ -39,6 +39,7 @@ SETTINGS = Settings(
     max_level=90,
     buffer_km=100,
     charge_kw=10.4,
+    max_level_long_trip=90,  # high cap off here; see test_high_cap.py
 )
 RATE = SETTINGS.charge_pct_per_hour()  # ≈ 12.68 %/h
 
@@ -87,7 +88,7 @@ def test_requirement():
 
 
 def test_week_cheapest_hours_and_long_trip():
-    p = plan(at(8, 14), 70, WEEK_DAYS, WEEK_PRICES, SETTINGS)
+    p = plan(at(8, 18), 70, WEEK_DAYS, WEEK_PRICES, SETTINGS)
     rows = by_day(p)
 
     # Friday noon (0.74, cheapest of the week) and Saturday 04 (0.78) charge
@@ -112,9 +113,9 @@ def test_week_cheapest_hours_and_long_trip():
 
 
 def test_never_above_max_level():
-    p = plan(at(8, 14), 70, WEEK_DAYS, WEEK_PRICES, SETTINGS)
+    p = plan(at(8, 18), 70, WEEK_DAYS, WEEK_PRICES, SETTINGS)
     level = 70.0
-    for slot, ch in ((s, {c.start: c.pct for c in p.hours}.get(s.start, 0.0)) for s in build_slots(at(8, 14), WEEK_DAYS, WEEK_PRICES, WEEK_PRICES, None, SETTINGS)):
+    for slot, ch in ((s, {c.start: c.pct for c in p.hours}.get(s.start, 0.0)) for s in build_slots(at(8, 18), WEEK_DAYS, WEEK_PRICES, WEEK_PRICES, None, SETTINGS)):
         level += ch
         assert level <= 90 + 1e-6
         level -= slot.use

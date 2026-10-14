@@ -22,6 +22,7 @@ from .const import (
     CONF_HORIZON_DAYS,
     CONF_KM_ENTITY,
     CONF_LAST_CALIBRATION_ENTITY,
+    CONF_LOCATION_ENTITY,
     CONF_PLUGGED_ENTITY,
     CONF_PRICE_ADAPTER,
     CONF_PRICE_ENTITY,
@@ -42,6 +43,7 @@ USER_SCHEMA = vol.Schema(
         vol.Required("name", default="EV Charge Planner"): str,
         vol.Required(CONF_SOC_ENTITY): _entity("sensor"),
         vol.Optional(CONF_PLUGGED_ENTITY): _entity("binary_sensor"),
+        vol.Optional(CONF_LOCATION_ENTITY): _entity("device_tracker"),
         vol.Required(CONF_PRICE_ADAPTER, default=ADAPTER_ENERGI_DATA_SERVICE): selector.SelectSelector(
             selector.SelectSelectorConfig(
                 options=[ADAPTER_ENERGI_DATA_SERVICE, ADAPTER_NORDPOOL, ADAPTER_GENERIC],

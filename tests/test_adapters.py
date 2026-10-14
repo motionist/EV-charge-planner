@@ -22,6 +22,11 @@ def test_legacy_trip_helpers():
     assert days[date(2026, 12, 25)].holiday is True
 
 
+def test_away_hours_until_midnight():
+    away = trips.parse_away_hours("2026-10-17=18-0;2026-10-17=10-15;2026-10-18=5-3")
+    assert away == {date(2026, 10, 17): [(18, 24), (10, 15)]}
+
+
 def test_energi_data_service_known_and_forecast():
     attrs = {
         "raw_today": [{"hour": datetime(2026, 10, 8, 0, tzinfo=TZ), "price": 1.663}],

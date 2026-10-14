@@ -11,6 +11,7 @@ from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, callback
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
+from homeassistant.util.location import distance
 
 from .adapters import prices as price_adapters
 from .adapters.trips import build_days
@@ -26,6 +27,7 @@ from .const import (
     CONF_HORIZON_DAYS,
     CONF_KM_ENTITY,
     CONF_LAST_CALIBRATION_ENTITY,
+    CONF_LOCATION_ENTITY,
     CONF_PLUGGED_ENTITY,
     CONF_PRICE_ADAPTER,
     CONF_PRICE_ENTITY,
@@ -72,6 +74,7 @@ class PlannerCoordinator(DataUpdateCoordinator[Plan]):
             CONF_AWAY_HOURS_ENTITY,
             CONF_AWAY_NIGHTS_ENTITY,
             CONF_LAST_CALIBRATION_ENTITY,
+            CONF_LOCATION_ENTITY,
         )
         return [e for k in keys if (e := self._conf.get(k))] + list(self._conf.get(CONF_FORECAST_MAE_ENTITIES) or [])
 
@@ -151,6 +154,22 @@ class PlannerCoordinator(DataUpdateCoordinator[Plan]):
         known_until = max((hp.start.astimezone(tz).date() for hp in known), default=None)
         return merge_prices(fallback, forecast, known, tz=tz), known_until
 
+    def _location(self) -> tuple[bool | None, float | None]:
+        """Whether the car is home (None if unknown) and its straight-line distance from home in km."""
+        plugged = self._state(CONF_PLUGGED_ENTITY)
+        if plugged is not None and plugged.state == "on":
+            return True, 0.0
+        st = self._state(CONF_LOCATION_ENTITY)
+        if st is None or st.state in ("unknown", "unavailable"):
+            return None, None
+        if st.state == "home":
+            return True, 0.0
+        lat, lon = st.attributes.get("latitude"), st.attributes.get("longitude")
+        if lat is None or lon is None:
+            return False, None
+        meters = distance(self.hass.config.latitude, self.hass.config.longitude, lat, lon)
+        return False, meters / 1000 if meters is not None else None
+
     # ------------------------------------------------------------------ update
 
     async def _async_update_data(self) -> Plan:
@@ -186,4 +205,14 @@ class PlannerCoordinator(DataUpdateCoordinator[Plan]):
             holidays,
         )
         prices, known_until = self._prices(tz)
-        return plan(now, soc, days, prices, settings, known_until=known_until)
+        car_home, distance_km = self._location()
+        return plan(
+            now,
+            soc,
+            days,
+            prices,
+            settings,
+            known_until=known_until,
+            car_home=car_home,
+            distance_km=distance_km,
+        )

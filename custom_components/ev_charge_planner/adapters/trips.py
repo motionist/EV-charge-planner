@@ -3,7 +3,8 @@
 v0.1 supports the "legacy" text helpers used by the original installation:
 
 * km per day:      ``2026-10-08=49.6;2026-10-12=49.6;``
-* away hours:      ``2026-10-08=8-17;2026-10-15=8-23``  (several entries per day allowed)
+* away hours:      ``2026-10-08=8-17;2026-10-15=8-23``  (several entries per day allowed;
+                   an end of 0 means midnight, e.g. ``18-0``)
 * away overnight:  ``2026-10-10,2026-10-11``  (car away the night after these dates)
 
 A calendar + routing adapter is planned for v0.2 (docs/DESIGN.md §8).
@@ -54,7 +55,9 @@ def parse_away_hours(text: str | None) -> dict[date, list[tuple[int, int]]]:
             s, e = int(s_s), int(e_s)
         except ValueError:
             continue
-        if e > s:
+        if e == 0:
+            e = 24  # until midnight
+        if 0 <= s < e <= 24:
             out.setdefault(d, []).append((s, e))
     return out
 

@@ -8,6 +8,7 @@
           "name": "Navn",
           "soc_entity": "Batteriniveau (SoC)-sensor",
           "plugged_entity": "Bil tilsluttet / hjemme (valgfri)",
+          "location_entity": "Bilens position (device tracker, valgfri) – vejen hjem trækkes fra SoC mens bilen er ude",
           "price_adapter": "Type af priskilde",
           "price_entity": "Prissensor",
           "forecast_entity": "Prisprognose-sensor, fx Open Spot Forecast (valgfri)",
@@ -67,6 +68,15 @@
       },
       "max_level": {
         "name": "Maks-niveau"
+      },
+      "max_level_long_trip": {
+        "name": "Maks-niveau før lang tur"
+      },
+      "long_trip_km": {
+        "name": "Lang tur fra"
+      },
+      "long_trip_advantage_pct": {
+        "name": "Prisfordel for højt loft"
       },
       "buffer_km": {
         "name": "Buffer efter ture"
