@@ -53,7 +53,7 @@ from .const import (
     PARAMS,
     UPDATE_INTERVAL_MINUTES,
 )
-from .planner import Plan, Settings, merge_prices, plan
+from .planner import Plan, Settings, calibrate_fallback, merge_prices, plan
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -86,6 +86,7 @@ class PlannerCoordinator(DataUpdateCoordinator[Plan]):
         self.missing_legs: list[str] = []
         self._calendar_error = False
         self._known_hours: set[tuple[date, int]] = set()
+        self._fallback_hours: set[tuple[date, int]] = set()
         # Issues of the last update (problem sensor) and the notifications sent.
         self.alerts = alerts.AlertTracker()
 
@@ -184,8 +185,11 @@ class PlannerCoordinator(DataUpdateCoordinator[Plan]):
             known = price_adapters.from_list(attrs.get("prices") or attrs.get("raw_today") or [], tz, "known")
         fst = self._state(CONF_FORECAST_ENTITY)
         forecast = price_adapters.open_spot_forecast(dict(fst.attributes), tz) if fst else []
+        # The fallback forecast only fills the hours after the forecast, at its level.
+        fallback = calibrate_fallback(fallback, forecast, tz=tz)
         known_until = max((hp.start.astimezone(tz).date() for hp in known), default=None)
         self._known_hours = {(s.date(), s.hour) for s in (hp.start.astimezone(tz) for hp in known)}
+        self._fallback_hours = {(s.date(), s.hour) for s in (hp.start.astimezone(tz) for hp in fallback)} - self._known_hours
         return merge_prices(fallback, forecast, known, tz=tz), known_until
 
     def _location(self) -> tuple[bool | None, float | None]:
@@ -358,6 +362,7 @@ class PlannerCoordinator(DataUpdateCoordinator[Plan]):
             known_until=known_until,
             car_home=car_home,
             distance_km=distance_km,
+            fallback_hours=self._fallback_hours,
         )
         short = next(
             (r.day for r in result.rows if r.requirement is not None and r.soc_departure is not None and r.soc_departure < r.requirement - 0.5),

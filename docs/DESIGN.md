@@ -55,7 +55,7 @@ Non-goals:
 | Current SoC | sensor entity | % |
 | Car at home / plugged in | binary_sensor (optional) | planner still produces a plan when unplugged; plugged in ⇒ home |
 | Car location | device_tracker (optional) | home or not, and the straight-line distance home from its latitude/longitude (§5.4) |
-| Hourly prices | price adapter | layered: **known prices** (today/tomorrow) override **forecast** (e.g. Open Spot Forecast, next ~4 days) which override a **fallback forecast** (e.g. Energi Data Service forecast). Missing hours have no price: the car cannot be planned to charge in them. |
+| Hourly prices | price adapter | layered: **known prices** (today/tomorrow) override **forecast** (e.g. Open Spot Forecast, next ~4 days) which override a **fallback forecast** (e.g. Energi Data Service forecast). The fallback only fills the hours after the forecast ends, calibrated to the forecast's level (§5.0). Missing hours have no price: the car cannot be planned to charge in them. |
 | Forecast error per lead day | sensor(s), optional | MAE in currency/kWh for lead day 1–4, e.g. Open Spot Forecast's `forecast_mae_day_1…4` sensors. Lead days beyond the last sensor use the last value × `forecast_far_factor`. Missing ⇒ forecasts are trusted (no adjustment). |
 | km per day and away hours | **calendars** (§3.1) or text helpers | Calendar entities: events with a location, routed with Waze Travel Time. Without calendars: legacy text `YYYY-MM-DD=km;…` and `YYYY-MM-DD=8-17;…`, e.g. produced with HERE routing – see [here-routing.md](here-routing.md). |
 | Away overnight | calendar (timed events over midnight) and/or text helper | legacy text `YYYY-MM-DD,YYYY-MM-DD`; both are combined. |
@@ -133,6 +133,25 @@ forecast is before any comparison:
    `adjusted = price ÷ factor` if `price > 0`, else `price × factor` (so an
    uncertain negative price is not made *more* attractive).
 5. Known prices are never adjusted.
+
+**Fallback forecast.** The fallback forecast (e.g. Energi Data Service's)
+only fills the hours after the forecast ends (Open Spot Forecast reaches
+about 4–5 days). It can be on another level than the forecast – Energi
+Data Service's forecast is typically 0.3–1 kr/kWh lower at night and up to
+2 kr/kWh lower at the evening peak – so it is first calibrated:
+
+1. For every hour of day, `offset[h]` = mean of (forecast − fallback) over
+   the hours both cover; an hour of day without overlap uses the overall
+   mean, and without any overlap the offset is 0.
+2. Each fallback hour after the forecast: `price = fallback + offset[h]`.
+
+It is also more uncertain than the forecast's last lead day, increasingly
+so further out. Every fallback hour is therefore *always* adjusted (also
+when the forecast itself is accurate enough), with
+`mae = mae_day[last] × forecast_far_factor ^ max(lead − last + 1, 1)` –
+with 4 MAE sensors and the default 1.25: × 1.25 on lead day 4, × 1.56 on
+day 5, × 1.95 on day 6 – and `accuracy = max(1 − mae ÷ mean(known), 0.3)`
+as above.
 
 All comparisons in §5.1–5.3 (which hour is cheaper, calibration price
 thresholds) use the adjusted price; the plan shows both the raw and the

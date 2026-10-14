@@ -5,7 +5,17 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from ev_charge_planner.planner import DayInfo, Settings, adjust_prices, forecast_factors, plan
+from ev_charge_planner.planner import (
+    DayInfo,
+    HourPrice,
+    Settings,
+    adjust_prices,
+    calibrate_fallback,
+    fallback_factors,
+    forecast_factors,
+    merge_prices,
+    plan,
+)
 
 TZ = ZoneInfo("Europe/Copenhagen")
 BASE = 1.30  # flat all-in price of every hour not given below
@@ -141,3 +151,75 @@ def test_known_day_hour_beats_forecast():
     trusted = plan(now, 50, TRIP_SAT, prices, settings(mae=()), known_until=oct(9))
     assert hours_of(by_day(trusted)[oct(9)]) == [12]
     assert trusted.target_soc == round(50 + rate)
+
+
+# --------------------------------------------------------------------------- #
+# Fallback forecast after the forecast ends
+# --------------------------------------------------------------------------- #
+
+
+def hp(day: int, hour: int, price: float, source: str) -> HourPrice:
+    return HourPrice(datetime(2026, 10, day, hour, tzinfo=TZ), price, source)
+
+
+def test_fallback_is_calibrated_per_hour_of_day():
+    """The fallback lacks e.g. the evening peak tariff: each hour of day gets its own mean difference."""
+    forecast = [hp(10, 3, 1.5, "forecast"), hp(11, 3, 1.1, "forecast"), hp(10, 18, 4.0, "forecast")]
+    fallback = [
+        hp(10, 3, 1.0, "fallback"),  # diff 0.5
+        hp(11, 3, 0.8, "fallback"),  # diff 0.3 → mean 0.4 at 03
+        hp(10, 18, 2.0, "fallback"),  # diff 2.0 at 18
+        hp(12, 3, 0.9, "fallback"),
+        hp(12, 18, 2.1, "fallback"),
+        hp(12, 12, 1.0, "fallback"),  # no overlap at 12 → overall mean (0.5 + 0.3 + 2.0) / 3
+    ]
+    out = {(p.start.day, p.start.hour): p for p in calibrate_fallback(fallback, forecast, tz=TZ)}
+    assert set(out) == {(12, 3), (12, 18), (12, 12)}  # hours the forecast covers are left out
+    assert out[(12, 3)].price == pytest.approx(1.3)
+    assert out[(12, 18)].price == pytest.approx(4.1)
+    assert out[(12, 12)].price == pytest.approx(1.0 + 2.8 / 3)
+    assert out[(12, 3)].source == "fallback"
+    merged = merge_prices(calibrate_fallback(fallback, forecast, tz=TZ), forecast, tz=TZ)
+    assert merged[(oct(10), 3)] == 1.5 and merged[(oct(12), 3)] == pytest.approx(1.3)
+
+
+def test_fallback_without_overlap_is_unchanged():
+    fallback = [hp(12, 3, 0.9, "fallback")]
+    assert calibrate_fallback(fallback, [], tz=TZ) == fallback
+    assert calibrate_fallback(fallback, [hp(10, 3, 1.5, "forecast")], tz=TZ) == fallback
+
+
+def test_fallback_factor_grows_per_day_and_ignores_min_accuracy():
+    prices = prices_for(oct(9), 8, {})
+    fb = [(oct(13), 3), (oct(14), 3), (oct(15), 3), (oct(9), 3)]
+    # Accurate forecast (no date factors), but the fallback hours are still adjusted.
+    s = settings(mae=(0.05, 0.06, 0.07, 0.08))
+    assert forecast_factors(prices, oct(9), s) == {}
+    f = fallback_factors(prices, fb, oct(9), s)
+    assert (oct(9), 3) not in f  # known date
+    assert f[(oct(13), 3)] == pytest.approx(1 - 0.08 * 1.25 / 1.30)  # lead 4
+    assert f[(oct(14), 3)] == pytest.approx(1 - 0.08 * 1.25**2 / 1.30)  # lead 5
+    assert f[(oct(15), 3)] == pytest.approx(1 - 0.08 * 1.25**3 / 1.30)
+    assert fallback_factors(prices, fb, oct(9), settings(mae=())) == {}
+    assert fallback_factors(prices, fb, None, s) == {}
+    assert fallback_factors(prices, [(oct(14), 3)], oct(9), settings(mae=(2.0,)))[(oct(14), 3)] == 0.3
+
+
+def test_hour_factor_takes_precedence_over_date_factor():
+    adj = adjust_prices({(oct(14), 3): 1.0, (oct(14), 4): 1.0}, {oct(14): 0.8}, {(oct(14), 3): 0.5})
+    assert adj[(oct(14), 3)] == pytest.approx(2.0)
+    assert adj[(oct(14), 4)] == pytest.approx(1.25)
+
+
+def test_plan_weighs_fallback_hours_by_their_uncertainty():
+    """A slightly cheaper fallback hour loses to a forecast hour once its uncertainty is priced in."""
+    s = settings(mae=(0.05, 0.06, 0.07, 0.08))
+    prices = prices_for(oct(9), 8, {(oct(12), 3): 1.00, (oct(14), 3): 0.95})
+    trip = {oct(15): DayInfo(oct(15), km=150, away_hours=[(9, 18)])}
+    now = datetime(2026, 10, 9, 20, 0, tzinfo=TZ)
+    without = by_day(plan(now, 50, trip, prices, s, known_until=oct(9)))
+    assert hours_of(without[oct(14)]) == [3]
+    rows = by_day(plan(now, 50, trip, prices, s, known_until=oct(9), fallback_hours={(oct(14), h) for h in range(24)}))
+    assert hours_of(rows[oct(12)]) == [3]
+    sun = [ch for ch in rows[oct(14)].charge_hours if ch.start.hour == 3]
+    assert not sun or sun[0].price == pytest.approx(0.95 / (1 - 0.08 * 1.25**2 / 1.30))
