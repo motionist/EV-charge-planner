@@ -1,0 +1,113 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "EV Charge Planner",
+        "description": "Choose the entities the planner reads. Trips (km per day, away hours, away nights) use the text formats described in the README in v0.1.",
+        "data": {
+          "name": "Name",
+          "soc_entity": "Battery level (SoC) sensor",
+          "plugged_entity": "Car plugged in / at home (optional)",
+          "location_entity": "Car location tracker (optional) – the way home is taken from the SoC while the car is away",
+          "price_adapter": "Price source type",
+          "price_entity": "Price sensor",
+          "forecast_entity": "Price forecast sensor, e.g. Open Spot Forecast (optional)",
+          "forecast_mae_entities": "Forecast error (MAE) sensors for lead day 1, 2, 3, 4 – in that order, e.g. Open Spot Forecast's forecast_mae_day_1…4 (optional)",
+          "efficiency_entity": "Efficiency sensor in kWh/km (optional)",
+          "km_entity": "Km per day text helper (optional)",
+          "away_hours_entity": "Away hours text helper (optional)",
+          "away_nights_entity": "Away nights text helper (optional)",
+          "holiday_calendar": "Public holiday calendar (optional)",
+          "last_calibration_entity": "Last battery calibration (optional)"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Departure and horizon",
+        "data": {
+          "default_departure_hour": "Departure on days without away hours (hour)",
+          "horizon_days": "Planning horizon (days)",
+          "efficiency_fallback": "Efficiency if no sensor (kWh/km)"
+        }
+      }
+    }
+  },
+  "selector": {
+    "price_adapter": {
+      "options": {
+        "energi_data_service": "Energi Data Service",
+        "nordpool": "Nord Pool (custom integration)",
+        "generic": "Generic (list attribute with time and price)"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "target_soc": {
+        "name": "Target SoC"
+      },
+      "next_charge_start": {
+        "name": "Next charging hour"
+      },
+      "charge_until": {
+        "name": "Charge until"
+      },
+      "plan": {
+        "name": "Plan"
+      }
+    },
+    "number": {
+      "floor_weekday": {
+        "name": "Floor weekday"
+      },
+      "floor_weekend": {
+        "name": "Floor weekend/holiday"
+      },
+      "max_level": {
+        "name": "Max level"
+      },
+      "max_level_long_trip": {
+        "name": "Max level before a long trip"
+      },
+      "long_trip_km": {
+        "name": "Long trip from"
+      },
+      "long_trip_advantage_pct": {
+        "name": "Price advantage for the long-trip cap"
+      },
+      "buffer_km": {
+        "name": "Buffer after trips"
+      },
+      "battery_kwh": {
+        "name": "Battery capacity"
+      },
+      "charge_kw": {
+        "name": "Charging power"
+      },
+      "calibration_soc": {
+        "name": "Calibration SoC"
+      },
+      "calibration_interval_days": {
+        "name": "Calibration interval"
+      },
+      "calibration_early_days": {
+        "name": "Calibration early grab"
+      },
+      "calibration_price_threshold": {
+        "name": "Calibration price threshold"
+      },
+      "calibration_escalation_pct_per_week": {
+        "name": "Calibration price escalation per week"
+      },
+      "forecast_min_accuracy": {
+        "name": "Forecast min. accuracy"
+      },
+      "forecast_far_factor": {
+        "name": "Forecast error factor beyond the last lead day"
+      }
+    }
+  }
+}

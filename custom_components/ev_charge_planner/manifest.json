@@ -1,0 +1,14 @@
+{
+  "domain": "ev_charge_planner",
+  "name": "EV Charge Planner",
+  "after_dependencies": ["calendar"],
+  "codeowners": ["@motionist"],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/motionist/EV-charge-planner",
+  "integration_type": "service",
+  "iot_class": "calculated",
+  "issue_tracker": "https://github.com/motionist/EV-charge-planner/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}

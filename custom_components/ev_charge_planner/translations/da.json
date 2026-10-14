@@ -1,0 +1,113 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "EV Charge Planner",
+        "description": "Vælg de entiteter planlæggeren læser. Ture (km pr. dag, ude-tider, ude-nætter) bruger i v0.1 tekstformaterne beskrevet i README.",
+        "data": {
+          "name": "Navn",
+          "soc_entity": "Batteriniveau (SoC)-sensor",
+          "plugged_entity": "Bil tilsluttet / hjemme (valgfri)",
+          "location_entity": "Bilens position (device tracker, valgfri) – vejen hjem trækkes fra SoC mens bilen er ude",
+          "price_adapter": "Type af priskilde",
+          "price_entity": "Prissensor",
+          "forecast_entity": "Prisprognose-sensor, fx Open Spot Forecast (valgfri)",
+          "forecast_mae_entities": "Prognosefejl (MAE)-sensorer for dag 1, 2, 3, 4 – i den rækkefølge, fx Open Spot Forecasts forecast_mae_day_1…4 (valgfri)",
+          "efficiency_entity": "Effektivitetssensor i kWh/km (valgfri)",
+          "km_entity": "Tekst-hjælper med km pr. dag (valgfri)",
+          "away_hours_entity": "Tekst-hjælper med ude-tider (valgfri)",
+          "away_nights_entity": "Tekst-hjælper med ude-nætter (valgfri)",
+          "holiday_calendar": "Kalender med helligdage (valgfri)",
+          "last_calibration_entity": "Seneste batterikalibrering (valgfri)"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Afgang og horisont",
+        "data": {
+          "default_departure_hour": "Afgang uden ude-tider (kl.)",
+          "horizon_days": "Planlægningshorisont (dage)",
+          "efficiency_fallback": "Effektivitet uden sensor (kWh/km)"
+        }
+      }
+    }
+  },
+  "selector": {
+    "price_adapter": {
+      "options": {
+        "energi_data_service": "Energi Data Service",
+        "nordpool": "Nord Pool (custom integration)",
+        "generic": "Generisk (liste-attribut med tid og pris)"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "target_soc": {
+        "name": "Mål-SoC"
+      },
+      "next_charge_start": {
+        "name": "Næste ladetime"
+      },
+      "charge_until": {
+        "name": "Lad færdig senest"
+      },
+      "plan": {
+        "name": "Ladeplan"
+      }
+    },
+    "number": {
+      "floor_weekday": {
+        "name": "Gulv hverdag"
+      },
+      "floor_weekend": {
+        "name": "Gulv weekend/helligdag"
+      },
+      "max_level": {
+        "name": "Maks-niveau"
+      },
+      "max_level_long_trip": {
+        "name": "Maks-niveau før lang tur"
+      },
+      "long_trip_km": {
+        "name": "Lang tur fra"
+      },
+      "long_trip_advantage_pct": {
+        "name": "Prisfordel for højt loft"
+      },
+      "buffer_km": {
+        "name": "Buffer efter ture"
+      },
+      "battery_kwh": {
+        "name": "Batterikapacitet"
+      },
+      "charge_kw": {
+        "name": "Ladeeffekt"
+      },
+      "calibration_soc": {
+        "name": "Kalibrerings-SoC"
+      },
+      "calibration_interval_days": {
+        "name": "Kalibreringsinterval"
+      },
+      "calibration_early_days": {
+        "name": "Kalibrering tidlig grib"
+      },
+      "calibration_price_threshold": {
+        "name": "Kalibrering prisgrænse"
+      },
+      "calibration_escalation_pct_per_week": {
+        "name": "Kalibrering pris-eskalering pr. uge"
+      },
+      "forecast_min_accuracy": {
+        "name": "Prognose min. nøjagtighed"
+      },
+      "forecast_far_factor": {
+        "name": "Prognosefejl-faktor efter sidste prognosedag"
+      }
+    }
+  }
+}
