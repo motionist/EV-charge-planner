@@ -67,9 +67,15 @@ Selected in the config flow:
   sensors (`forecast_mae_day_1…4`, in that order) for the forecast price
   adjustment.
 * Optional efficiency sensor (kWh/km), otherwise a fixed value.
-* Trips via text helpers (calendar adapter planned for v0.2). How the km per
-  day can be calculated from Google Calendar with HERE routing is described in
-  [docs/here-routing.md](docs/here-routing.md):
+* **Trips from your calendars**: pick one or more calendar entities (Google,
+  iCloud/CalDAV, Local Calendar, ICS …). Events with a location are car
+  trips; km and travel time come from the **Waze Travel Time** integration
+  (no API key). Online meetings and events marked `#tog`/`#ingenbil` are
+  skipped, home words (e.g. your town) count as home, and the car goes home
+  between two events when there is at least an hour at home. Details in
+  [DESIGN.md §3.1](docs/DESIGN.md).
+* Or trips via text helpers, e.g. calculated with HERE routing as described
+  in [docs/here-routing.md](docs/here-routing.md):
   * km per day: `2026-10-08=49.6;2026-10-12=49.6;`
   * away hours: `2026-10-08=8-17;2026-10-15=8-23`
   * away nights: `2026-10-10,2026-10-11` (car away the night after these dates)

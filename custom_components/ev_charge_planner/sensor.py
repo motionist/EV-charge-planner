@@ -131,6 +131,8 @@ class PlanSensor(_Base):
     """The full plan as attributes (planned hours and one row per date) for dashboards."""
 
     _attr_icon = "mdi:calendar-clock"
+    # Large and changing every update: keep them out of the recorder.
+    _unrecorded_attributes = frozenset({"hours", "rows", "totals", "trips", "trip_source", "missing_legs"})
 
     def __init__(self, coordinator: PlannerCoordinator) -> None:
         super().__init__(coordinator, "plan")
@@ -176,4 +178,15 @@ class PlanSensor(_Base):
             "kwh_forecast": p.kwh_forecast,
             "cost_forecast": p.cost_forecast,
         }
-        return {"hours": [_hour(ch) for ch in p.hours], "rows": rows, "totals": totals}
+        trips = {
+            d.isoformat(): {"km": t.km, "away_hours": [list(a) for a in t.away], "away_overnight": t.away_overnight, "stops": t.stops}
+            for d, t in sorted(self.coordinator.trips.items())
+        }
+        return {
+            "hours": [_hour(ch) for ch in p.hours],
+            "rows": rows,
+            "totals": totals,
+            "trip_source": self.coordinator.trip_source,
+            "trips": trips,
+            "missing_legs": self.coordinator.missing_legs,
+        }

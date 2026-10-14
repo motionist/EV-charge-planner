@@ -57,14 +57,42 @@ Non-goals:
 | Car location | device_tracker (optional) | home or not, and the straight-line distance home from its latitude/longitude (§5.4) |
 | Hourly prices | price adapter | layered: **known prices** (today/tomorrow) override **forecast** (e.g. Open Spot Forecast, next ~4 days) which override a **fallback forecast** (e.g. Energi Data Service forecast). Missing hours have no price: the car cannot be planned to charge in them. |
 | Forecast error per lead day | sensor(s), optional | MAE in currency/kWh for lead day 1–4, e.g. Open Spot Forecast's `forecast_mae_day_1…4` sensors. Lead days beyond the last sensor use the last value × `forecast_far_factor`. Missing ⇒ forecasts are trusted (no adjustment). |
-| km per day | trip adapter | v0.1: legacy text format `YYYY-MM-DD=km;…`, e.g. produced from Google Calendar with HERE routing – see [here-routing.md](here-routing.md). v0.2: calendar + routing built in. |
-| Away hours | trip adapter | v0.1: legacy text `YYYY-MM-DD=8-17;…`. Later: calendar events with location + travel time. |
-| Away overnight | trip adapter | v0.1: legacy text `YYYY-MM-DD,YYYY-MM-DD`. |
+| km per day and away hours | **calendars** (§3.1) or text helpers | Calendar entities: events with a location, routed with Waze Travel Time. Without calendars: legacy text `YYYY-MM-DD=km;…` and `YYYY-MM-DD=8-17;…`, e.g. produced with HERE routing – see [here-routing.md](here-routing.md). |
+| Away overnight | calendar (timed events over midnight) and/or text helper | legacy text `YYYY-MM-DD,YYYY-MM-DD`; both are combined. |
 | Public holidays | `workday` binary sensor or holiday calendar | optional |
 | Efficiency | sensor (kWh/km) or fixed number | |
 | Battery capacity | number (kWh) | |
 | Charging speed | entity (optional), else the `charge_kw` number | e.g. EV Smart Charging's charging speed in %/h (converted with the battery capacity), or a charger power in kW/W. While the entity has no usable value, the number is used. |
 | Parameters | `number` entities owned by the integration | see §6 |
+
+### 3.1 Calendar trips
+
+Any `calendar.*` entity works (Google, CalDAV/iCloud/Nextcloud, Local
+Calendar, Remote Calendar/ICS, Microsoft 365 via HACS …) – the planner reads
+the events with `calendar.get_events` every 15 minutes, for all chosen
+calendars together.
+
+1. **Car trips.** An event with a location, unless the location, title or
+   description contains an *ignore word* (default: Teams, Zoom,
+   meet.google, Webex, online, links, `#ingenbil`, `#tog`) or the location
+   contains a *home word* or lies within 1 km of home.
+2. **Routing.** Each leg (home → location, location → home, and between
+   consecutive locations of a day) is looked up with the Waze Travel Time
+   action `waze_travel_time.get_travel_times` (no API key; the fastest of
+   the returned routes). Legs are cached for 24 h; a leg that fails is
+   retried after an hour and meanwhile counts 30 min and 0 km (listed in
+   the plan sensor's `missing_legs`).
+3. **A day.** Timed events are driven in order. Between two events the car
+   goes home when that leaves at least `min_home_minutes` (60) at home,
+   otherwise it drives directly on. km = the sum of the driven legs; the car
+   is away from (first start − travel there) to (last end + travel home) of
+   every block, rounded out to whole hours.
+4. **All-day events** with a location: away 06–20 on each date, with a
+   round trip each date. **Timed events over midnight** (a hotel stay):
+   the nights in between are away nights.
+
+The plan sensor shows the result per date (`trips`: km, away hours, away
+night, stops) so it can be checked against the calendar.
 
 ## 4. Hourly slots
 
@@ -281,9 +309,10 @@ parameter change.
    as number entities, and tests for the 0.74 known vs 0.65 forecast and
    the known noon hour vs forecast night cases. The planner is hourly
    (§4–5) – the night/day window model of the first draft was dropped.
-2. **v0.2** – calendar trip adapter (events with location → km via a
-   routing provider; travel time → away hours; multi-day events → away
-   overnight), Nordpool/Tibber adapters, workday holidays.
+2. **v0.2** – calendar trip adapter (§3.1, done: events with location → km
+   and travel time via Waze Travel Time; events over midnight → away
+   overnight), charging speed from an entity (done), Nordpool/Tibber
+   adapters, workday holidays, HERE as an alternative routing provider.
 3. **v0.3** – optional direct control helpers (blueprint for EV Smart
    Charging start/completion time), example dashboard card, HACS default
    listing (brands, docs, translations).

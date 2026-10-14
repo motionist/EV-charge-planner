@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "EV Charge Planner",
-        "description": "Vælg de entiteter planlæggeren læser. Ture (km pr. dag, ude-tider, ude-nætter) bruger i v0.1 tekstformaterne beskrevet i README.",
+        "description": "Vælg de enheder planlæggeren læser. Ture kommer fra kalendere (aftaler med lokalitet, ruteberegnet med Waze Travel Time) eller, hvis ingen kalender er valgt, fra tekst-hjælperne beskrevet i README.",
         "data": {
           "name": "Navn",
           "soc_entity": "Batteriniveau (SoC)-sensor",
@@ -15,6 +15,7 @@
           "forecast_entity": "Prisprognose-sensor, fx Open Spot Forecast (valgfri)",
           "forecast_mae_entities": "Prognosefejl (MAE)-sensorer for dag 1, 2, 3, 4 – i den rækkefølge, fx Open Spot Forecasts forecast_mae_day_1…4 (valgfri)",
           "efficiency_entity": "Effektivitetssensor i kWh/km (valgfri)",
+          "calendar_entities": "Kalendere med dine ture (valgfri) – aftaler med lokalitet bliver til bilture; km og køretid via Waze Travel Time",
           "km_entity": "Tekst-hjælper med km pr. dag (valgfri)",
           "away_hours_entity": "Tekst-hjælper med ude-tider (valgfri)",
           "away_nights_entity": "Tekst-hjælper med ude-nætter (valgfri)",
@@ -27,14 +28,19 @@
   "options": {
     "step": {
       "init": {
-        "title": "Afgang, horisont og ladehastighed",
+        "title": "Ture, ladehastighed og afgang",
         "data": {
+          "calendar_entities": "Kalendere med dine ture – tom: brug tekst-hjælperne",
+          "home_words": "Hjemme-ord (kommasepareret) – lokaliteter med et af dem regnes som hjemme",
+          "ignore_words": "Ignorer-ord (kommasepareret) – aftaler med et af dem i lokalitet, titel eller beskrivelse køres ikke",
+          "min_home_minutes": "Mindste tid hjemme mellem to aftaler for at køre hjem",
+          "waze_region": "Waze-region",
           "charge_speed_entity": "Ladehastighed fra en enhed (%/h, kW eller W) – tom = brug tallet Ladeeffekt",
           "default_departure_hour": "Afgang uden ude-tider (kl.)",
           "horizon_days": "Planlægningshorisont (dage)",
           "efficiency_fallback": "Effektivitet uden sensor (kWh/km)"
         },
-        "description": "Ladehastigheden fra enheden bruges i stedet for tallet Ladeeffekt, så længe den har en brugbar værdi; er den utilgængelig, bruges tallet."
+        "description": "Kalendere: aftaler med lokalitet er bilture (km og køretid fra Waze Travel Time). Lokaliteter med et hjemme-ord, eller inden for 1 km af hjemmet, regnes som hjemme; aftaler med et ignorer-ord i lokalitet, titel eller beskrivelse køres ikke. Mellem to aftaler kører bilen hjem, når der bliver mindst den angivne tid hjemme. Ladehastigheden fra enheden bruges i stedet for tallet Ladeeffekt, så længe den har en brugbar værdi."
       }
     }
   },
@@ -44,6 +50,15 @@
         "energi_data_service": "Energi Data Service",
         "nordpool": "Nord Pool (custom integration)",
         "generic": "Generisk (liste-attribut med tid og pris)"
+      }
+    },
+    "waze_region": {
+      "options": {
+        "eu": "Europe",
+        "us": "USA",
+        "na": "North America",
+        "il": "Israel",
+        "au": "Australia"
       }
     }
   },

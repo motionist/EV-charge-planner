@@ -1,9 +1,10 @@
 # Km per day from Google Calendar with HERE routing
 
 This is how the original installation turns calendar appointments into the
-`km per day` input of the planner. In v0.1 it runs as a Home Assistant
-automation that writes a text helper (`YYYY-MM-DD=km;…`); v0.2 will build the
-same logic into the integration (see [DESIGN.md](DESIGN.md) §8).
+`km per day` input of the planner, as a Home Assistant automation that writes
+a text helper (`YYYY-MM-DD=km;…`). Since v0.2 the integration can read your
+calendars itself and route with Waze Travel Time (see [DESIGN.md](DESIGN.md)
+§3.1); this automation is the alternative with HERE routing.
 
 ## How it works
 
