@@ -227,15 +227,15 @@ an unplanned trip later at a higher price. After §5.1:
   inside the horizon with prices and
   `price(i) ≤ m − |m| × cheap_fill_advantage_pct` (default 25 %), where *m* is
   the cheapest home hour in the window. Later qualifying hours that are not
-  cheaper than *i* are left out of *m*, so a cheap night qualifies as a
-  whole, while a cheaper night inside the window wins (decided backwards in
-  time).
-* Qualifying hours fill in time order with
+  at least the same advantage cheaper than *i* are left out of *m* (decided
+  backwards in time), so a cheap night qualifies as a whole, while a much
+  cheaper night inside the window wins.
+* Qualifying hours fill cheapest first (on equal prices the earlier) with
   `min(capacity − planned, max_level − highest SoC after the hour)`.
-* Charging planned by §5.1 that the fill made redundant is removed, the most
-  expensive hours first, by at most the smallest surplus over the
-  requirement at every later departure (fill and calibration hours are
-  kept).
+* Charging planned by §5.1 that the fill made redundant is removed: hours
+  dearer than every fill hour, the most expensive first, by at most the
+  smallest surplus over the requirement at every later departure
+  (calibration hours are kept).
 * Forecast hours fill too, but are not handed over (§5.3); the fill follows
   the prices as they become known. `cheap_fill_advantage_pct = 0` disables
   it.

@@ -94,3 +94,10 @@ def test_waits_for_a_cheaper_hour_within_the_window():
     p = plan(at(19, 22), 50, DAYS, prices({**CHEAP_NIGHT, **cheaper}), S)
     fill = [c for c in p.hours if c.cheap_fill]
     assert fill and all(c.start.date() == oct(21) for c in fill)
+
+
+def test_a_whole_cheap_night_fills_not_only_its_cheapest_hour():
+    night = {(oct(20), 2): 0.6, (oct(20), 3): 0.55, (oct(20), 4): 0.5, (oct(20), 5): 0.6}
+    p = plan(at(19, 22), 50, DAYS, prices(night), S)
+    assert by_day(p)[oct(20)].soc_departure == pytest.approx(S.max_level, abs=0.1)
+    assert len([c for c in p.hours if c.cheap_fill]) >= 3

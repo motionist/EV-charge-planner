@@ -396,11 +396,12 @@ def cheap_fill(soc: float, slots: list[_Slot], q: list[float], s: Settings) -> s
     A home hour qualifies when its price is at least
     ``cheap_fill_advantage_pct`` below every later home hour within
     ``CHEAP_FILL_WINDOW`` hours, and that window lies inside the horizon with
-    prices. Later qualifying hours that are not cheaper are left out of the
-    comparison, so a cheap night qualifies as a whole. Qualifying hours fill in
-    time order without the battery exceeding the max level after them; ``q``
-    is updated in place and the fill hours are returned.
-    ``cheap_fill_advantage_pct = 0`` disables it.
+    prices. Later qualifying hours that are not that much cheaper are left
+    out of the comparison, so a cheap night qualifies as a whole while a much
+    cheaper night later wins. Qualifying hours fill cheapest first without
+    the battery exceeding the max level after them; ``q`` is updated in place
+    and the fill hours are returned. ``cheap_fill_advantage_pct = 0``
+    disables it.
     """
     advantage = s.cheap_fill_advantage_pct / 100
     filled: set[int] = set()
@@ -416,14 +417,16 @@ def cheap_fill(soc: float, slots: list[_Slot], q: list[float], s: Settings) -> s
         later = [
             sl.price
             for j, sl in enumerate(slots[i + 1 : i + CHEAP_FILL_WINDOW + 1], start=i + 1)
-            if sl.capacity > 0 and sl.price is not None and not (j in qualifies and sl.price >= price)
+            if sl.capacity > 0
+            and sl.price is not None
+            and not (j in qualifies and sl.price > price - abs(price) * advantage)
         ]
         if later:
             m = min(later)  # type: ignore[type-var]
             if price > m - abs(m) * advantage:
                 continue
         qualifies.add(i)
-    for i in sorted(qualifies):
+    for i in sorted(qualifies, key=lambda i: (slots[i].price, i)):  # type: ignore[arg-type,return-value]
         levels = _levels(soc, slots, q, n - 1)
         end = levels[-1] + q[-1] - slots[-1].use
         add = min(slots[i].capacity - q[i], s.max_level - max([*levels[i + 1 :], end]))
@@ -433,16 +436,25 @@ def cheap_fill(soc: float, slots: list[_Slot], q: list[float], s: Settings) -> s
     return filled
 
 
-def trim(soc: float, slots: list[_Slot], q: list[float], keep: Collection[int]) -> None:
-    """Remove charging made redundant by later additions (cheap fill).
+def trim(soc: float, slots: list[_Slot], q: list[float], fill: Collection[int], keep: Collection[int] = ()) -> None:
+    """Remove charging made redundant by the cheap fill.
 
-    The most expensive planned hours (except ``keep``) are reduced first, by
-    at most the smallest surplus over the requirement at every later
-    departure. ``q`` is updated in place.
+    Planned hours dearer than every fill hour (except ``fill`` and ``keep``)
+    are reduced, the most expensive first, by at most the smallest surplus
+    over the requirement at every later departure. ``q`` is updated in place.
     """
     n = len(slots)
+    dearest_fill = max(slots[i].price for i in fill)  # type: ignore[type-var]
     order = sorted(
-        (k for k in range(n) if q[k] > EPS and k not in keep and slots[k].price is not None),
+        (
+            k
+            for k in range(n)
+            if q[k] > EPS
+            and k not in fill
+            and k not in keep
+            and slots[k].price is not None
+            and slots[k].price > dearest_fill  # type: ignore[operator]
+        ),
         key=lambda k: (-slots[k].price, k),  # type: ignore[operator]
     )
     for k in order:
@@ -557,7 +569,7 @@ def plan(
     unmet = allocate(soc, slots, q, s)
     fill_hours = cheap_fill(soc, slots, q, s)
     if fill_hours:
-        trim(soc, slots, q, fill_hours | cal_hours)
+        trim(soc, slots, q, fill_hours, cal_hours)
 
     charge_now = sum(q[:until])
     t0 = now.replace(minute=0, second=0, microsecond=0)
