@@ -51,7 +51,7 @@ the trips plus a safety buffer, bought at the cheapest hours.
 | `sensor.<name>_charge_until` | End of the hand-over (next departure or last known price hour) – e.g. EV Smart Charging's completion time. |
 | `sensor.<name>_next_charging_hour` | The first planned charging hour (known or forecast). |
 | `sensor.<name>_plan` | The full plan: `hours` (every planned hour with %, kWh, price and known/forecast), `rows` (one per date) and `totals` (kWh and cost for known and forecast prices) for your own dashboard – see [docs/example-card.md](docs/example-card.md). |
-| `number.<name>_*` | Parameters: floors, max level, high cap before long trips (level, km, price advantage), buffer (km), battery capacity, charging power, calibration settings, forecast min. accuracy and far factor. |
+| `number.<name>_*` | Parameters: floors, max level, high cap before long trips (level, km, price advantage), price advantage for cheap fill, buffer (km), battery capacity, charging power, calibration settings, forecast min. accuracy and far factor. |
 
 ## Inputs (v0.1)
 

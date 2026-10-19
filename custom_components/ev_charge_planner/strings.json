@@ -124,6 +124,9 @@
       "long_trip_advantage_pct": {
         "name": "Price advantage for the long-trip cap"
       },
+      "cheap_fill_advantage_pct": {
+        "name": "Price advantage for cheap fill"
+      },
       "buffer_km": {
         "name": "Buffer after trips"
       },

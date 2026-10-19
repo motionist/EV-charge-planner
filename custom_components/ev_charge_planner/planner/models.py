@@ -48,6 +48,9 @@ class Settings:
     max_level_long_trip: float = 100.0
     long_trip_km: float = 100.0
     long_trip_advantage_pct: float = 30.0
+    # Cheap fill (DESIGN §5.1a): fill up to max_level in an hour at least this
+    # much cheaper than the cheapest hour of the next 48 hours; 0 disables it.
+    cheap_fill_advantage_pct: float = 25.0
     charge_kw: float = 11.0  # charging power at the home charger
     # Departure on a date without away hours (and return after an away night).
     default_departure_hour: int = 8
@@ -94,6 +97,7 @@ class ChargeHour:
     raw_price: float | None  # price as reported by the price source
     known: bool  # True for a known (day-ahead) price, False for a forecast
     calibration: bool = False
+    cheap_fill: bool = False
 
 
 @dataclass

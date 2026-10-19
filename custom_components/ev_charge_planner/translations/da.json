@@ -124,6 +124,9 @@
       "long_trip_advantage_pct": {
         "name": "Prisfordel for højt loft"
       },
+      "cheap_fill_advantage_pct": {
+        "name": "Prisfordel for billig opfyldning"
+      },
       "buffer_km": {
         "name": "Buffer efter ture"
       },

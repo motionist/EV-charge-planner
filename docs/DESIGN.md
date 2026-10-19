@@ -217,6 +217,29 @@ level has room. Consequences:
   as before and the rest after it.
 * `max_level_long_trip ≤ max_level` disables the rule.
 
+### 5.1a Cheap fill
+
+The calendar does not know every trip. When an hour is much cheaper than the
+following days, it is worth filling the battery then rather than charging
+an unplanned trip later at a higher price. After §5.1:
+
+* A home hour *i* **qualifies** when the window of the next 48 hours lies
+  inside the horizon with prices and
+  `price(i) ≤ m − |m| × cheap_fill_advantage_pct` (default 25 %), where *m* is
+  the cheapest home hour in the window. Later qualifying hours that are not
+  at least the same advantage cheaper than *i* are left out of *m* (decided
+  backwards in time), so a cheap night qualifies as a whole, while a much
+  cheaper night inside the window wins.
+* Qualifying hours fill cheapest first (on equal prices the earlier) with
+  `min(capacity − planned, max_level − highest SoC after the hour)`.
+* Charging planned by §5.1 that the fill made redundant is removed: hours
+  dearer than every fill hour, the most expensive first, by at most the
+  smallest surplus over the requirement at every later departure
+  (calibration hours are kept).
+* Forecast hours fill too, but are not handed over (§5.3); the fill follows
+  the prices as they become known. `cheap_fill_advantage_pct = 0` disables
+  it.
+
 ### 5.2 Calibration (optional)
 
 Lithium batteries' SoC estimate drifts; periodically charging high
@@ -316,6 +339,7 @@ Texts are in Danish when Home Assistant's language is Danish, else English.
 | Max level before a long trip (`max_level_long_trip`) | 100 | % |
 | Long trip from (`long_trip_km`) | 100 | km |
 | Price advantage for the high cap (`long_trip_advantage_pct`) | 30 | % |
+| Price advantage for cheap fill (`cheap_fill_advantage_pct`, 0 = off) | 25 | % |
 | Buffer after trips | 100 | km |
 | Battery capacity | 75 | kWh |
 | Charging power (`charge_kw`) – used when no charging speed entity is set or it is unavailable | 11 | kW |
