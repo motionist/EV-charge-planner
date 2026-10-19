@@ -15,6 +15,7 @@ from .models import ChargeHour, DayInfo, HourPrice, Plan, PlanRow, Settings
 HourMap = dict[tuple[date, int], float]
 
 EPS = 0.05  # percentage points treated as "nothing"
+CHEAP_FILL_WINDOW = 48  # hours compared by the cheap fill (DESIGN §5.1a)
 ROAD_FACTOR = 1.3  # road distance ≈ 1.3 × straight-line distance
 
 
@@ -389,6 +390,72 @@ def allocate(soc: float, slots: list[_Slot], q: list[float], s: Settings) -> flo
     return unmet
 
 
+def cheap_fill(soc: float, slots: list[_Slot], q: list[float], s: Settings) -> set[int]:
+    """Fill up in hours much cheaper than the following days (DESIGN §5.1a).
+
+    A home hour qualifies when its price is at least
+    ``cheap_fill_advantage_pct`` below every later home hour within
+    ``CHEAP_FILL_WINDOW`` hours, and that window lies inside the horizon with
+    prices. Later qualifying hours that are not cheaper are left out of the
+    comparison, so a cheap night qualifies as a whole. Qualifying hours fill in
+    time order without the battery exceeding the max level after them; ``q``
+    is updated in place and the fill hours are returned.
+    ``cheap_fill_advantage_pct = 0`` disables it.
+    """
+    advantage = s.cheap_fill_advantage_pct / 100
+    filled: set[int] = set()
+    if advantage <= 0:
+        return filled
+    n = len(slots)
+    qualifies: set[int] = set()
+    # Backwards: whether an hour qualifies only depends on the later hours.
+    for i in range(n - CHEAP_FILL_WINDOW - 1, -1, -1):
+        price = slots[i].price
+        if slots[i].capacity <= 0 or price is None or slots[i + CHEAP_FILL_WINDOW].price is None:
+            continue
+        later = [
+            sl.price
+            for j, sl in enumerate(slots[i + 1 : i + CHEAP_FILL_WINDOW + 1], start=i + 1)
+            if sl.capacity > 0 and sl.price is not None and not (j in qualifies and sl.price >= price)
+        ]
+        if later:
+            m = min(later)  # type: ignore[type-var]
+            if price > m - abs(m) * advantage:
+                continue
+        qualifies.add(i)
+    for i in sorted(qualifies):
+        levels = _levels(soc, slots, q, n - 1)
+        end = levels[-1] + q[-1] - slots[-1].use
+        add = min(slots[i].capacity - q[i], s.max_level - max([*levels[i + 1 :], end]))
+        if add > EPS:
+            q[i] += add
+            filled.add(i)
+    return filled
+
+
+def trim(soc: float, slots: list[_Slot], q: list[float], keep: Collection[int]) -> None:
+    """Remove charging made redundant by later additions (cheap fill).
+
+    The most expensive planned hours (except ``keep``) are reduced first, by
+    at most the smallest surplus over the requirement at every later
+    departure. ``q`` is updated in place.
+    """
+    n = len(slots)
+    order = sorted(
+        (k for k in range(n) if q[k] > EPS and k not in keep and slots[k].price is not None),
+        key=lambda k: (-slots[k].price, k),  # type: ignore[operator]
+    )
+    for k in order:
+        levels = _levels(soc, slots, q, n - 1)
+        surplus = [levels[j] - sl.requirement for j, sl in enumerate(slots) if j > k and sl.requirement is not None]
+        if not surplus:
+            # Nothing after this hour needs the energy.
+            continue
+        cut = min(q[k], min(surplus))
+        if cut > EPS:
+            q[k] -= cut
+
+
 def _days_since_calibration(now: datetime, s: Settings) -> float:
     if s.last_calibration is None:
         return 999.0
@@ -488,6 +555,9 @@ def plan(
     until = handover_end(slots, s)
     cal_hours = set(calibrate(now, soc, slots, q, until, s))
     unmet = allocate(soc, slots, q, s)
+    fill_hours = cheap_fill(soc, slots, q, s)
+    if fill_hours:
+        trim(soc, slots, q, fill_hours | cal_hours)
 
     charge_now = sum(q[:until])
     t0 = now.replace(minute=0, second=0, microsecond=0)
@@ -536,6 +606,7 @@ def plan(
                 raw_price=slot.raw_price,
                 known=slot.known,
                 calibration=i in cal_hours,
+                cheap_fill=i in fill_hours,
             )
             hours.append(ch)
             row.charge_hours.append(ch)

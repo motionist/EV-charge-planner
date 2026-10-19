@@ -83,6 +83,7 @@ PARAMS: tuple[ParamSpec, ...] = (
     ParamSpec("max_level_long_trip", 100, 50, 100, 1, "%", "mdi:battery-high"),
     ParamSpec("long_trip_km", 100, 0, 1000, 10, "km", "mdi:road-variant"),
     ParamSpec("long_trip_advantage_pct", 30, 0, 80, 5, "%", "mdi:cash-minus"),
+    ParamSpec("cheap_fill_advantage_pct", 25, 0, 80, 5, "%", "mdi:battery-plus"),
     ParamSpec("buffer_km", 100, 0, 300, 10, "km", "mdi:map-marker-distance"),
     ParamSpec("battery_kwh", 75, 10, 200, 0.5, "kWh", "mdi:car-battery"),
     ParamSpec("charge_kw", 11, 1, 50, 0.1, "kW", "mdi:ev-station"),

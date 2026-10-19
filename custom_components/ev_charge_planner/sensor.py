@@ -39,6 +39,7 @@ def _hour(ch: ChargeHour) -> dict[str, Any]:
         "price_adjusted": ch.price,
         "known": ch.known,
         "calibration": ch.calibration,
+        "cheap_fill": ch.cheap_fill,
     }
 
 
