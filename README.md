@@ -35,9 +35,12 @@ the trips plus a safety buffer, bought at the cheapest hours.
   – calibrated per hour of day to the forecast's level and weighed by its
   larger uncertainty.
 * Weighs a **known price higher than a forecast**: when a forecast day's
-  accuracy (from the forecast's own error statistics) is below 90 %, its
-  prices are divided by the accuracy before they are compared – so a known 0.74 today beats a 0.65 forecast for
-  tomorrow at 84 % accuracy (0.77). See [DESIGN.md §5.0](docs/DESIGN.md).
+  accuracy (from the forecast's error statistics) is below 90 %, its
+  prices get a safety margin of the forecast's error (MAE) before they are
+  compared – so a known 0.74 today beats a 0.65 forecast for tomorrow with
+  an error of 0.21 (0.86). A day where the forecast and the fallback
+  forecast disagree more than usual gets that disagreement as margin too.
+  See [DESIGN.md §5.0](docs/DESIGN.md).
 * **Hands over** only the certain part: the hours with known prices before
   the next departure (max 24 h) become a target SoC and a "charge until"
   time for EV Smart Charging or your charger integration. The rest is the
@@ -65,9 +68,10 @@ Selected in the config flow:
   while the entity is unavailable.
 * Price sensor: **Energi Data Service** (known prices + its forecast),
   **Nord Pool** (custom integration) or a generic list attribute.
-* Optional price forecast sensor (**Open Spot Forecast**) and its error
-  sensors (`forecast_mae_day_1…4`, in that order) for the forecast price
-  adjustment.
+* Optional price forecast sensor (**Open Spot Forecast**) and error
+  sensors for lead day 1–4, in that order (e.g. its `forecast_mae_day_1…4`,
+  or your own measured error) for the forecast price adjustment – also in
+  the options flow.
 * Optional efficiency sensor (kWh/km), otherwise a fixed value.
 * **Trips from your calendars**: pick one or more calendar entities (Google,
   iCloud/CalDAV, Local Calendar, ICS …). Events with a location are car

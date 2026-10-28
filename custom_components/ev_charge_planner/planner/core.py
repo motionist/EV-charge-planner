@@ -85,7 +85,32 @@ def calibrate_fallback(
     return out
 
 
-MIN_FORECAST_FACTOR = 0.3
+def forecast_disagreement(
+    fallback: Iterable[HourPrice],
+    forecast: Iterable[HourPrice],
+    tz=None,
+    offsets: Mapping[int, float] | None = None,
+) -> dict[date, float]:
+    """Per date, how far the forecast and the fallback forecast disagree (DESIGN §5.0).
+
+    ``|mean(forecast − fallback − offset[h])|`` over the hours of the date
+    both cover, with the raw (uncalibrated) fallback and the ``offsets`` of
+    ``fallback_offsets``: the two forecasts' usual difference per hour of day
+    is left out, so only a date where they disagree more than usual counts.
+    Empty without offsets or overlap.
+    """
+    fallback, forecast = list(fallback), list(forecast)
+    if offsets is None:
+        offsets = fallback_offsets(fallback, forecast, tz)
+    if not offsets:
+        return {}
+    covered = {(t.date(), t.hour): hp.price for hp in forecast for t in [_local(hp, tz)]}
+    diffs: dict[date, list[float]] = defaultdict(list)
+    for hp in fallback:
+        t = _local(hp, tz)
+        if (t.date(), t.hour) in covered:
+            diffs[t.date()].append(covered[(t.date(), t.hour)] - hp.price - offsets.get(t.hour, 0.0))
+    return {d: abs(sum(v) / len(v)) for d, v in diffs.items()}
 
 
 def _known_mean(prices: HourMap, known_until: date) -> float:
@@ -93,49 +118,57 @@ def _known_mean(prices: HourMap, known_until: date) -> float:
     return sum(known) / len(known) if known else 0.0
 
 
-def forecast_factors(prices: HourMap, known_until: date | None, s: Settings) -> dict[date, float]:
-    """Accuracy factor per forecast date whose accuracy is too low (DESIGN §5.0).
+def forecast_margins(
+    prices: HourMap,
+    known_until: date | None,
+    s: Settings,
+    disagreement: Mapping[date, float] | None = None,
+) -> dict[date, float]:
+    """Safety margin (currency/kWh) added to every forecast price of a date (DESIGN §5.0).
 
-    Dates up to ``known_until`` have known prices and are never adjusted.
-    accuracy = 1 − MAE(lead day) ÷ mean known price; dates with accuracy below
-    ``forecast_min_accuracy`` get factor max(accuracy, MIN_FORECAST_FACTOR).
+    Dates up to ``known_until`` have known prices and get none. For a later
+    date: ``mae = MAE(lead day)`` (× ``forecast_far_factor`` beyond the last
+    lead day) counts when ``accuracy = 1 − mae ÷ mean known price`` is below
+    ``forecast_min_accuracy``; the date's ``disagreement`` (forecast against
+    fallback forecast) always counts. The margin is the larger of the two,
+    at most the mean known price.
     """
-    if known_until is None or not s.forecast_mae:
+    if known_until is None:
         return {}
     mean = _known_mean(prices, known_until)
-    if mean <= 0:
-        return {}
     n = len(s.forecast_mae)
     out: dict[date, float] = {}
     for d in sorted({d for (d, _h) in prices if d > known_until}):
-        lead = (d - known_until).days
-        mae = s.forecast_mae[min(lead, n) - 1] * (s.forecast_far_factor if lead > n else 1.0)
-        accuracy = 1 - mae / mean
-        if accuracy < s.forecast_min_accuracy / 100:
-            out[d] = max(accuracy, MIN_FORECAST_FACTOR)
+        margin = (disagreement or {}).get(d, 0.0)
+        if n and mean > 0:
+            lead = (d - known_until).days
+            mae = s.forecast_mae[min(lead, n) - 1] * (s.forecast_far_factor if lead > n else 1.0)
+            if 1 - mae / mean < s.forecast_min_accuracy / 100:
+                margin = max(margin, mae)
+        if mean > 0:
+            margin = min(margin, mean)
+        if margin > 0:
+            out[d] = margin
     return out
 
 
-def fallback_factors(
+def fallback_margins(
     prices: HourMap,
     fallback_hours: Collection[tuple[date, int]],
     known_until: date | None,
     s: Settings,
 ) -> dict[tuple[date, int], float]:
-    """Accuracy factor of every fallback forecast hour (DESIGN §5.0).
+    """Safety margin of every fallback forecast hour (DESIGN §5.0).
 
     The fallback forecast is used after the forecast ends, so it is taken to
     be less accurate than the forecast's last lead day, and more so the
     further out: ``mae = mae_day[last] × forecast_far_factor ** max(lead −
-    last + 1, 1)``, ``accuracy = 1 − mae ÷ mean known price``. Unlike the
-    forecast, it is always applied (whatever ``forecast_min_accuracy``),
-    with the same floor.
+    last + 1, 1)``. Unlike the forecast, it is always added (whatever
+    ``forecast_min_accuracy``), at most the mean known price.
     """
     if known_until is None or not s.forecast_mae or not fallback_hours:
         return {}
     mean = _known_mean(prices, known_until)
-    if mean <= 0:
-        return {}
     n = len(s.forecast_mae)
     out: dict[tuple[date, int], float] = {}
     for d, h in fallback_hours:
@@ -143,24 +176,24 @@ def fallback_factors(
             continue
         lead = (d - known_until).days
         mae = s.forecast_mae[-1] * s.forecast_far_factor ** max(lead - n + 1, 1)
-        out[(d, h)] = max(1 - mae / mean, MIN_FORECAST_FACTOR)
+        out[(d, h)] = min(mae, mean) if mean > 0 else mae
     return out
 
 
 def adjust_prices(
     prices: HourMap,
-    factors: Mapping[date, float],
-    hour_factors: Mapping[tuple[date, int], float] | None = None,
+    margins: Mapping[date, float],
+    hour_margins: Mapping[tuple[date, int], float] | None = None,
 ) -> HourMap:
-    """Divide forecast prices by their factor (negative prices are multiplied).
+    """Add the safety margin to every forecast price.
 
-    ``hour_factors`` (fallback forecast hours) take precedence over the
-    date's factor.
+    ``hour_margins`` (fallback forecast hours) take precedence over the
+    date's margin.
     """
     out: HourMap = {}
     for (d, h), p in prices.items():
-        f = (hour_factors or {}).get((d, h), factors.get(d))
-        out[(d, h)] = p if f is None else (p / f if p > 0 else p * f)
+        m = (hour_margins or {}).get((d, h), margins.get(d))
+        out[(d, h)] = p if m is None else p + m
     return out
 
 
@@ -542,11 +575,12 @@ def plan(
     car_home: bool | None = None,
     distance_km: float | None = None,
     fallback_hours: Collection[tuple[date, int]] = (),
+    disagreement: Mapping[date, float] | None = None,
 ) -> Plan:
     """Plan charging hour by hour over the horizon (DESIGN §5).
 
     ``known_until`` is the last date with known prices; later dates are
-    forecasts, adjusted for their accuracy before any comparison (§5.0), and
+    forecasts, made dearer by a safety margin before any comparison (§5.0), and
     are never handed over to the charger integration. ``None`` treats every
     price as known.
 
@@ -556,12 +590,14 @@ def plan(
 
     ``fallback_hours`` are the (date, hour) keys whose price comes from the
     fallback forecast; they get their own, larger uncertainty (§5.0).
+    ``disagreement`` is the per-date disagreement of the forecast and the
+    fallback forecast (``forecast_disagreement``).
     """
     rest_km = remaining_km(now, days, car_home, distance_km)
     soc = soc - rest_km * s.pct_per_km()
-    factors = forecast_factors(prices, known_until, s)
-    hour_factors = fallback_factors(prices, fallback_hours, known_until, s)
-    slots = build_slots(now, days, prices, adjust_prices(prices, factors, hour_factors), known_until, s)
+    margins = forecast_margins(prices, known_until, s, disagreement)
+    hour_margins = fallback_margins(prices, fallback_hours, known_until, s)
+    slots = build_slots(now, days, prices, adjust_prices(prices, margins, hour_margins), known_until, s)
     q = [0.0] * len(slots)
 
     until = handover_end(slots, s)
@@ -597,7 +633,7 @@ def plan(
                 cost=None,
                 charge_hours=[],
                 soc_departure=None,
-                forecast_factor=factors.get(d, 1.0),
+                forecast_margin=round(margins.get(d, 0.0), 3),
                 away_overnight=bool(info and info.away_overnight),
             )
         row = rows[d]

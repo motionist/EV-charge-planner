@@ -39,6 +39,7 @@
           "min_home_minutes": "Mindste tid hjemme mellem to aftaler for at køre hjem",
           "waze_region": "Waze-region",
           "charge_speed_entity": "Ladehastighed fra en enhed (%/h, kW eller W) – tom = brug tallet Ladeeffekt",
+          "forecast_mae_entities": "Prognosefejl (MAE)-sensorer for dag 1, 2, 3, 4 – i den rækkefølge, fx Open Spot Forecasts forecast_mae_day_1…4 (tom: prognoser stoles på)",
           "default_departure_hour": "Afgang uden ude-tider (kl.)",
           "horizon_days": "Planlægningshorisont (dage)",
           "efficiency_fallback": "Effektivitet uden sensor (kWh/km)"
