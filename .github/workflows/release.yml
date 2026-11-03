@@ -1,0 +1,28 @@
+name: Release
+
+# Push a tag like v0.1.0b2 on main to publish a GitHub release that HACS
+# offers as an update. The tag must match "version" in manifest.json.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check that the tag matches manifest.json
+        run: |
+          version=$(python3 -c "import json; print(json.load(open('custom_components/ev_charge_planner/manifest.json'))['version'])")
+          if [ "v${version}" != "${GITHUB_REF_NAME}" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match manifest version ${version}" >&2
+            exit 1
+          fi
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
