@@ -115,7 +115,7 @@ class PlanRow:
     cost: float | None  # raw price × kWh of the hours with a price
     charge_hours: list[ChargeHour]
     soc_departure: float | None  # expected SoC at departure
-    forecast_factor: float = 1.0  # accuracy factor of this date's prices
+    forecast_margin: float = 0.0  # safety margin added to this date's forecast prices (currency/kWh)
     calibration: bool = False
     away_overnight: bool = False
     status: str = "not_needed"  # charge | covered | not_needed

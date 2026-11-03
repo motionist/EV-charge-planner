@@ -53,7 +53,7 @@ from .const import (
     PARAMS,
     UPDATE_INTERVAL_MINUTES,
 )
-from .planner import Plan, Settings, calibrate_fallback, fallback_offsets, merge_prices, plan
+from .planner import Plan, Settings, calibrate_fallback, fallback_offsets, forecast_disagreement, merge_prices, plan
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -88,6 +88,7 @@ class PlannerCoordinator(DataUpdateCoordinator[Plan]):
         self._known_hours: set[tuple[date, int]] = set()
         self._fallback_hours: set[tuple[date, int]] = set()
         self._fallback_offsets: dict[int, float] | None = None
+        self._disagreement: dict[date, float] = {}
         # Issues of the last update (problem sensor) and the notifications sent.
         self.alerts = alerts.AlertTracker()
 
@@ -195,6 +196,9 @@ class PlannerCoordinator(DataUpdateCoordinator[Plan]):
         if offsets is not None:
             self._fallback_offsets = offsets
         offsets = offsets or self._fallback_offsets
+        # How much the two forecasts disagree per date, beyond their usual
+        # difference: part of the forecast's safety margin (DESIGN §5.0).
+        self._disagreement = forecast_disagreement(fallback, forecast, tz, offsets) if forecast and offsets else {}
         if offsets is None and self._conf.get(CONF_FORECAST_ENTITY):
             fallback = []
         else:
@@ -375,6 +379,7 @@ class PlannerCoordinator(DataUpdateCoordinator[Plan]):
             car_home=car_home,
             distance_km=distance_km,
             fallback_hours=self._fallback_hours,
+            disagreement=self._disagreement,
         )
         short = next(
             (r.day for r in result.rows if r.requirement is not None and r.soc_departure is not None and r.soc_departure < r.requirement - 0.5),

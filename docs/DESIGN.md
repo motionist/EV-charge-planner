@@ -46,7 +46,8 @@ Non-goals:
 | **High cap** | `max_level_long_trip` (default 100 %): the cap in the home stay right before a long trip when charging there is much cheaper (§5.1). |
 | **Consumption** | `km × efficiency_kwh_per_km ÷ battery_kwh × 100` (% of battery). |
 | **Forecast accuracy** | Per date that only has forecast prices: `1 − MAE ÷ mean known price`, where MAE is the forecast's mean absolute error for that lead day (see §5.0). Known prices have accuracy 1. |
-| **Adjusted price** | The price the planner compares hours by: the known price, or a forecast price divided by its accuracy when the accuracy is below `forecast_min_accuracy`. A known price therefore weighs more than a forecast of the same size. |
+| **Safety margin** | Added to a forecast price before comparison: the MAE when the accuracy is below `forecast_min_accuracy`, or the forecasts' disagreement that date when larger (see §5.0). |
+| **Adjusted price** | The price the planner compares hours by: the known price, or a forecast price plus its safety margin. A known price therefore weighs more than a forecast of the same size. |
 
 ## 3. Inputs
 
@@ -56,7 +57,7 @@ Non-goals:
 | Car at home / plugged in | binary_sensor (optional) | planner still produces a plan when unplugged; plugged in ⇒ home |
 | Car location | device_tracker (optional) | home or not, and the straight-line distance home from its latitude/longitude (§5.4) |
 | Hourly prices | price adapter | layered: **known prices** (today/tomorrow) override **forecast** (e.g. Open Spot Forecast, next ~4 days) which override a **fallback forecast** (e.g. Energi Data Service forecast). The fallback only fills the hours after the forecast ends, calibrated to the forecast's level (§5.0). Missing hours have no price: the car cannot be planned to charge in them. |
-| Forecast error per lead day | sensor(s), optional | MAE in currency/kWh for lead day 1–4, e.g. Open Spot Forecast's `forecast_mae_day_1…4` sensors. Lead days beyond the last sensor use the last value × `forecast_far_factor`. Missing ⇒ forecasts are trusted (no adjustment). |
+| Forecast error per lead day | sensor(s), optional | MAE in currency/kWh for lead day 1–4, e.g. Open Spot Forecast's `forecast_mae_day_1…4` sensors or your own measured error. Lead days beyond the last sensor use the last value × `forecast_far_factor`. Missing ⇒ only the disagreement margin is used. |
 | km per day and away hours | **calendars** (§3.1) or text helpers | Calendar entities: events with a location, routed with Waze Travel Time. Without calendars: legacy text `YYYY-MM-DD=km;…` and `YYYY-MM-DD=8-17;…`, e.g. produced with HERE routing – see [here-routing.md](here-routing.md). |
 | Away overnight | calendar (timed events over midnight) and/or text helper | legacy text `YYYY-MM-DD,YYYY-MM-DD`; both are combined. |
 | Public holidays | `workday` binary sensor or holiday calendar | optional |
@@ -119,20 +120,31 @@ now ─ h0 ─ h1 ─ … ─ 08 depart(d1) ─ … ─ 08 depart(d2) ─ … �
 A known (day-ahead) price is certain; a forecast is not. Comparing them
 at face value makes the planner wait for a forecast night that is only
 slightly cheaper and often turns out more expensive. Therefore every
-forecast price is made "worse" in proportion to how unreliable the
-forecast is before any comparison:
+forecast price gets a safety margin before any comparison: a forecast
+hour is only preferred when it is cheaper by more than the forecast's
+usual error.
+
+The margin is added, not multiplied: a forecast's error is about the same
+in currency/kWh at night and at the evening peak (measured: 0.3–0.5
+kr/kWh per hour and per night in DK2, autumn 2026), so dividing by an
+accuracy factor made cheap night prices – the ones that matter for
+charging – far too certain.
 
 1. `last_known` = the last date covered by known prices.
 2. For each date *d* after `last_known`: `lead = d − last_known` (days),
    `mae = mae_day[min(lead, 4)]` (× `forecast_far_factor` when lead > 4),
    `accuracy = 1 − mae ÷ mean(known prices)`.
-3. `factor = 1` if `accuracy ≥ forecast_min_accuracy`, else
-   `max(accuracy, 0.3)` (the floor prevents absurd prices when the
-   forecast is very poor).
-4. Every hourly price of *d*:
-   `adjusted = price ÷ factor` if `price > 0`, else `price × factor` (so an
-   uncertain negative price is not made *more* attractive).
-5. Known prices are never adjusted.
+3. `disagreement[d]` = how far the forecast and the fallback forecast
+   disagree that date, beyond their usual difference:
+   `|mean(forecast − fallback − offset[h])|` over the hours both cover,
+   with the raw fallback and the per-hour-of-day `offset` below. Two
+   forecasts that disagree more than usual are a sign that the date is
+   hard to forecast, whatever the MAE says.
+4. `margin = max(mae if accuracy < forecast_min_accuracy else 0,
+   disagreement[d])`, at most `mean(known prices)`.
+5. Every hourly price of *d*: `adjusted = price + margin` (also a
+   negative price, so an uncertain one is never made more attractive).
+6. Known prices are never adjusted.
 
 **Fallback forecast.** The fallback forecast (e.g. Energi Data Service's)
 only fills the hours after the forecast ends (Open Spot Forecast reaches
@@ -152,22 +164,23 @@ Data Service's forecast is typically 0.3–1 kr/kWh lower at night and up to
    the wrong time.
 
 It is also more uncertain than the forecast's last lead day, increasingly
-so further out. Every fallback hour is therefore *always* adjusted (also
-when the forecast itself is accurate enough), with
+so further out. Every fallback hour therefore *always* gets a margin (also
+when the forecast itself is accurate enough):
 `mae = mae_day[last] × forecast_far_factor ^ max(lead − last + 1, 1)` –
 with 4 MAE sensors and the default 1.25: × 1.25 on lead day 4, × 1.56 on
-day 5, × 1.95 on day 6 – and `accuracy = max(1 − mae ÷ mean(known), 0.3)`
-as above.
+day 5, × 1.95 on day 6 – at most `mean(known prices)`.
 
 All comparisons in §5.1–5.3 (which hour is cheaper, calibration price
 thresholds) use the adjusted price; the plan shows both the raw and the
 adjusted price.
 
 Example: tonight's known price is 0.74, tomorrow night's forecast is 0.65
-with day-1 accuracy 84 % ⇒ adjusted 0.65 ÷ 0.84 = 0.77 > 0.74, so tonight's
-hour is preferred and charges for tomorrow as well. The same applies to a
-known 0.74 at noon against a forecast 0.66 tonight (adjusted 0.79), and to a
-known 1.30 against a forecast 1.30.
+with a day-1 MAE of 0.21 (accuracy 84 %) ⇒ adjusted 0.65 + 0.21 = 0.86 >
+0.74, so tonight's hour is preferred and charges for tomorrow as well. The
+same applies to a known 0.74 at noon against a forecast 0.66 tonight
+(adjusted 0.87), and to a known 1.30 against a forecast 1.30. With an
+accurate forecast (no MAE margin) but a disagreement of 0.2 that date, the
+forecast 0.65 becomes 0.85 and tonight still wins.
 
 ### 5.1 Covering the requirements (greedy, cheapest hour first)
 
@@ -393,11 +406,11 @@ parameter change.
 
 ## 9. Open questions
 
-* Forecast accuracy: the reference is the mean of the currently known
-  prices (today/tomorrow). A longer reference (e.g. 30-day mean price)
-  would make the factor steadier across cheap and expensive days. The
-  MAE could also come from the planner's own log of forecast vs actual
-  (as the private installation does) instead of the forecast provider.
+* Forecast accuracy: the reference for `forecast_min_accuracy` is the mean
+  of the currently known prices (today/tomorrow). The MAE sensors can be
+  the forecast provider's own statistics or a log of forecast vs actual
+  night prices per lead day (as the private installation does); the
+  planner could keep that log itself.
 
 * Charging power is a constant; a charge curve (slower above ~80 %) would
   make the capacity of high-SoC hours more realistic.

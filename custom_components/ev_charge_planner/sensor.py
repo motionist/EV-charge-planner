@@ -164,7 +164,7 @@ class PlanSensor(_Base):
                 "charge_hours": [ch.start.hour for ch in r.charge_hours],
                 "charge_known": all(ch.known for ch in r.charge_hours),
                 "soc_departure": r.soc_departure,
-                "forecast_factor": r.forecast_factor,
+                "forecast_margin": r.forecast_margin,
                 "calibration": r.calibration,
                 "away_overnight": r.away_overnight,
                 "status": r.status,

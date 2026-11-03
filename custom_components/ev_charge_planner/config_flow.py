@@ -107,13 +107,14 @@ class EvChargePlannerConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class EvChargePlannerOptionsFlow(OptionsFlow):
-    """Calendar trips, charging speed entity, default departure hour, horizon and efficiency fallback."""
+    """Calendar trips, charging speed entity, forecast error sensors, default departure hour, horizon and efficiency fallback."""
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         if user_input is not None:
-            # Emptied fields: no calendars (text helpers are used), charging power parameter.
+            # Emptied fields: no calendars (text helpers are used), charging power parameter, no forecast error sensors.
             user_input.setdefault(CONF_CALENDAR_ENTITIES, [])
             user_input.setdefault(CONF_CHARGE_SPEED_ENTITY, None)
+            user_input.setdefault(CONF_FORECAST_MAE_ENTITIES, [])
             user_input.setdefault(CONF_HOME_WORDS, "")
             user_input.setdefault(CONF_IGNORE_WORDS, "")
             user_input.setdefault(CONF_NOTIFY_TARGETS, [])
@@ -150,6 +151,9 @@ class EvChargePlannerOptionsFlow(OptionsFlow):
                 vol.Optional(
                     CONF_CHARGE_SPEED_ENTITY, description={"suggested_value": speed} if speed else None
                 ): _entity(CHARGE_SPEED_DOMAINS),
+                vol.Optional(
+                    CONF_FORECAST_MAE_ENTITIES, description={"suggested_value": cur.get(CONF_FORECAST_MAE_ENTITIES) or []}
+                ): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor", multiple=True)),
                 vol.Required(CONF_DEFAULT_DEPARTURE_HOUR, default=cur[CONF_DEFAULT_DEPARTURE_HOUR]): _hour(),
                 vol.Required(CONF_HORIZON_DAYS, default=cur[CONF_HORIZON_DAYS]): selector.NumberSelector(
                     selector.NumberSelectorConfig(min=1, max=7, step=1, mode=selector.NumberSelectorMode.BOX)
