@@ -5,6 +5,7 @@ trip on Wednesday, 176 km on Thursday (away until midnight) and the weekday
 floor on Friday morning.
 """
 
+from dataclasses import replace
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -165,3 +166,27 @@ def test_energy_and_cost_by_price_basis():
     row = by_day(p)[oct(14)]
     assert row.charge_kwh == pytest.approx(sum(c.kwh for c in row.charge_hours), abs=0.05)
     assert row.cost == pytest.approx(sum(c.kwh * c.raw_price for c in row.charge_hours), abs=0.05)
+
+
+def test_trip_beyond_the_max_level_charges_to_the_high_cap():
+    """A 477 km Saturday (seen 7 November 2026) needs ~157 %: charge to 100 %.
+
+    Before, the requirement was capped at the max level, so the plan stopped at
+    90 % although the trip needs more than a full battery. The high cap is only
+    reached in the home stay right before the trip; Friday's departure stays
+    within the max level.
+    """
+    days = {
+        oct(16): DayInfo(oct(16), km=40, away_hours=[(8, 17)]),
+        oct(17): DayInfo(oct(17), km=477, away_hours=[(9, 20)]),
+    }
+    p = plan(at(15, 20), 60, days, prices({}), S)
+    rows = by_day(p)
+    assert rows[oct(17)].soc_departure == pytest.approx(S.max_level_long_trip, abs=0.1)
+    assert rows[oct(16)].soc_departure <= S.max_level + 1e-6
+
+
+def test_high_cap_equal_to_max_level_keeps_the_old_cap():
+    days = {oct(17): DayInfo(oct(17), km=477, away_hours=[(9, 20)])}
+    p = plan(at(15, 20), 60, days, prices({}), replace(S, max_level_long_trip=S.max_level))
+    assert by_day(p)[oct(17)].soc_departure == pytest.approx(S.max_level, abs=0.1)
