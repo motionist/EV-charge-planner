@@ -5,6 +5,7 @@ installation the planner was ported from (Polestar 2, 82 kWh, 0.219 kWh/km,
 10.4 kW ≈ 12.7 %/h, Danish all-in prices).
 """
 
+from dataclasses import replace
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -79,11 +80,15 @@ def hours_of(row):
 
 
 def test_requirement():
-    # Floor, trips + buffer, max level before an away night – capped at max.
+    # Floor, trips + buffer, max level before an away night – capped at max,
+    # a long trip at the high cap (max_level_long_trip, default 100 %).
     assert requirement(oct(9), None, SETTINGS) == 55
     assert requirement(oct(10), None, SETTINGS) == 41
     assert requirement(oct(15), WEEK_DAYS[oct(15)], SETTINGS) == pytest.approx(179.3 * 0.219 / 82 * 100 + 100 * 0.219 / 82 * 100)
-    assert requirement(oct(9), DayInfo(oct(9), km=400), SETTINGS) == 90
+    assert requirement(oct(9), DayInfo(oct(9), km=400), SETTINGS) == 90  # high cap off
+    assert requirement(oct(9), DayInfo(oct(9), km=400), replace(SETTINGS, max_level_long_trip=100)) == 100
+    # Not a long trip (below long_trip_km): the max level still caps it.
+    assert requirement(oct(9), DayInfo(oct(9), km=400), replace(SETTINGS, max_level_long_trip=100, long_trip_km=500)) == 90
     assert requirement(oct(9), DayInfo(oct(9), away_overnight=True), SETTINGS) == 90
 
 

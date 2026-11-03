@@ -24,8 +24,9 @@ the trips plus a safety buffer, bought at the cheapest hours.
   90 %). A long trip later in the week is topped up in the cheapest hour
   before it.
 * **High cap before long trips**: right before a long trip (default ≥ 100
-  km) it may charge up to 100 % when that is at least 30 % cheaper than
-  charging after the trip – never days in advance.
+  km) it charges up to 100 % when the trip needs more than the max level, or
+  when that is at least 30 % cheaper than charging after the trip – never
+  days in advance.
 * **Car away now**: with a location tracker, the way home is taken from the
   SoC while the car is out, so tomorrow's plan does not count on energy that
   will be used on the way back.

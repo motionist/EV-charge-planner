@@ -242,6 +242,9 @@ def requirement(day: date, info: DayInfo | None, s: Settings) -> float:
 
     The floor, or the date's trips plus the buffer, or the max level before an
     away night – capped at the max level (or the floor, if that is higher).
+    A long trip (at least ``long_trip_km``) is capped at the high cap
+    ``max_level_long_trip`` instead, so a trip that needs more than the max
+    level is charged up to it right before the trip.
     """
     floor = floor_for(day, info, s)
     cons = consumption(info, s)
@@ -250,7 +253,10 @@ def requirement(day: date, info: DayInfo | None, s: Settings) -> float:
         cons + s.buffer_pct() if cons > 0 else 0.0,
         s.max_level if info is not None and info.away_overnight else 0.0,
     )
-    return min(need, max(s.max_level, floor))
+    cap = s.max_level
+    if cons > 0 and cons >= s.long_trip_km * s.pct_per_km():
+        cap = max(cap, s.max_level_long_trip)
+    return min(need, max(cap, floor))
 
 
 def is_home(day: date, hour: int, days: Mapping[date, DayInfo], s: Settings) -> bool:

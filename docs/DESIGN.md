@@ -38,12 +38,12 @@ Non-goals:
 | **Away hours** | Per date: hour intervals when the car is away from home (derived from the calendar incl. travel time). |
 | **Away overnight** | The car is away the night *after* date *d* (e.g. hotel): from its departure until `default_departure_hour` the next day (or that day's away hours). The departure before it requires `max_level`. |
 | **Departure** | The first time the car leaves on date *d*: its first away hour, else `default_departure_hour` (08). The date's consumption is drawn here. After an away night the car does not depart from home, so that date has no requirement. |
-| **Requirement** | SoC needed at a departure: `max(floor, consumption + buffer% if consumption > 0, max_level if away the following night)`, capped at `max(max_level, floor)`. |
+| **Requirement** | SoC needed at a departure: `max(floor, consumption + buffer% if consumption > 0, max_level if away the following night)`, capped at `max(max_level, floor)` – for a long trip at `max(max_level_long_trip, max_level, floor)` instead. |
 | **Floor** | Minimum SoC at departure: `floor_weekday` or `floor_weekend` (weekend = Sat/Sun or a public holiday). |
 | **Buffer** | Range that must remain *after* the planned trips: `buffer_km` (default 100 km) converted to %. |
-| **Max level** | Upper cap for normal charging (default 90 %). Long trips may therefore not be able to keep the full buffer – this is accepted. |
+| **Max level** | Upper cap for normal charging (default 90 %). A long trip may go up to the high cap; beyond that it may not keep the full buffer – this is accepted. |
 | **Long trip** | A departure whose consumption is at least `long_trip_km` (default 100 km). |
-| **High cap** | `max_level_long_trip` (default 100 %): the cap in the home stay right before a long trip when charging there is much cheaper (§5.1). |
+| **High cap** | `max_level_long_trip` (default 100 %): the cap in the home stay right before a long trip – when the trip needs more than the max level, or when charging there is much cheaper (§5.1). |
 | **Consumption** | `km × efficiency_kwh_per_km ÷ battery_kwh × 100` (% of battery). |
 | **Forecast accuracy** | Per date that only has forecast prices: `1 − MAE ÷ mean known price`, where MAE is the forecast's mean absolute error for that lead day (see §5.0). Known prices have accuracy 1. |
 | **Safety margin** | Added to a forecast price before comparison: the MAE when the accuracy is below `forecast_min_accuracy`, or the forecasts' disagreement that date when larger (see §5.0). |
@@ -219,7 +219,10 @@ after the trip. So a second candidate is found in step 3 with the cap
 It is used instead of the best slot within the max level when it is at
 least `long_trip_advantage_pct` (default 30 %) cheaper
 (`price_high ≤ price − |price| × advantage`), or when no slot within the max
-level has room. Consequences:
+level has room. The latter is how a trip that needs more than the max level
+is covered: the requirement of a long trip is capped at the high cap, not the
+max level (seen in the private installation: a 477 km Saturday needing
+~157 % was only charged to 90 %). Consequences:
 
 * The battery is only above the max level in the home stay right before the
   long trip – never across an earlier departure, so it is not kept at 100 %
